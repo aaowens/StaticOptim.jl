@@ -32,6 +32,7 @@ function soptimize(f, x::StaticVector)
     jold = copy(x); s = copy(x)
     @unpack c_1, ρ_hi, ρ_lo, iterations, order = ls
     iterfinitemax = -log2(eps(eltype(x)))
+    sqrttol = sqrt(eps(Float64))
     α_0 = 1.
     N = 200
     for n = 1:N
@@ -43,7 +44,6 @@ function soptimize(f, x::StaticVector)
         n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx), n, hx, false)
         if n > 1 # update hessian
             y = jx - jold
-            ForwardDiff.hessian(f, x)
             hx = norm(y) < eps(eltype(x)) ? hx : hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
         end
         s = -hx\jx # Obtain direction
@@ -96,7 +96,7 @@ function soptimize(f, x::StaticVector)
                 a = (α_1^2*(ϕx_1 - ϕ_0 - dϕ_0*α_2) - α_2^2*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
                 b = (-α_1^3*(ϕx_1 - ϕ_0 - dϕ_0*α_2) + α_2^3*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
 
-                if norm(a) <= eps(Float64) + sqrt(eps(Float64))*norm(a)
+                if norm(a) <= eps(Float64) + sqrttol*norm(a)
                     α_tmp = dϕ_0 / (2*b)
                 else
                     # discriminant

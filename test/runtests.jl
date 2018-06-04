@@ -13,6 +13,8 @@ sx = 3.2 * sx
 rosenbrock(x) =  (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
 res = soptimize(rosenbrock, sx)
 @test res.converged == true
+res = soptimize(rosenbrock, sx/2)
+@test res.converged == true
 
 
 function fletcher_powell(x::AbstractVector)
@@ -32,6 +34,8 @@ sx = @SVector ones(3)
 sx = 3.2 * sx
 res = soptimize(fletcher_powell, sx)
 @test res.converged == true
+res = soptimize(fletcher_powell, sx/2)
+@test res.converged == true
 
 function himmelblau(x::AbstractVector)
     return (x[1]^2 + x[2] - 11)^2 + (x[1] + x[2]^2 - 7)^2
@@ -39,6 +43,8 @@ end
 sx = @SVector ones(2)
 sx = 3.2 * sx
 res = soptimize(himmelblau, sx)
+@test res.converged == true
+res = soptimize(himmelblau, sx/2)
 @test res.converged == true
 
 function powell(x::AbstractVector)
@@ -48,4 +54,6 @@ end
 sx = @SVector ones(4)
 sx = 3.2 * sx
 res = soptimize(powell, sx)
+@test res.converged == true
+res = soptimize(powell, sx/2)
 @test res.converged == true
