@@ -1,6 +1,8 @@
 # Much of this code is lifted from LineSearches.jl
 # I modified it to accept StaticArrays and not allocate
 
+# Some of the optimization code is adapted from Optim.jl
+
 
 @with_kw struct BackTracking{TF, TI}
     c_1::TF = 1e-4
@@ -17,6 +19,7 @@ struct StaticOptimizationResult{TS <: SVector, TV <: SMatrix}
     normjx::Float64
     iter::Int
     hx::TV
+    converged::Bool
 end
 
 function soptimize(f, x::StaticVector)
@@ -25,25 +28,31 @@ function soptimize(f, x::StaticVector)
     tol = 1e-8
     x_new = copy(x)
     hx = diagm(ones(x))
+    hold = copy(hx)
     jold = copy(x); s = copy(x)
     @unpack c_1, ρ_hi, ρ_lo, iterations, order = ls
     iterfinitemax = -log2(eps(eltype(x)))
     α_0 = 1.
-    N = 100
+    N = 200
     for n = 1:N
         res = ForwardDiff.gradient!(res, f, x) # Obtain gradient
         ϕ_0 = DiffBase.value(res)
-        isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx)
+        isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx, false)
         jx = DiffBase.gradient(res)
-        norm(jx) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx), n, hx)
+        norm(jx) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx), n, hx, true)
+        n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx), n, hx, false)
         if n > 1 # update hessian
             y = jx - jold
             ForwardDiff.hessian(f, x)
-            hx = hx + y*y' / (y'*s) - (hx*(s*s')*hx')/(s'*hx*s)
+            hx = norm(y) < eps(eltype(x)) ? hx : hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
         end
         s = -hx\jx # Obtain direction
         dϕ_0 = dot(jx, s)
-
+        if dϕ_0 >= 0. # If bad, reset search direction
+            hx = hold
+            s = -jx
+            dϕ_0 = dot(jx, s)
+        end
         #### Perform line search
 
         # Count the total number of iterations
@@ -87,7 +96,7 @@ function soptimize(f, x::StaticVector)
                 a = (α_1^2*(ϕx_1 - ϕ_0 - dϕ_0*α_2) - α_2^2*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
                 b = (-α_1^3*(ϕx_1 - ϕ_0 - dϕ_0*α_2) + α_2^3*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
 
-                if norm(a) <= eps(Float64)
+                if norm(a) <= eps(Float64) + sqrt(eps(Float64))*norm(a)
                     α_tmp = dϕ_0 / (2*b)
                 else
                     # discriminant
@@ -110,7 +119,7 @@ function soptimize(f, x::StaticVector)
         x = x + s # Update x
         jold = copy(jx)
     end
-    return StaticOptimizationResult(NaN, NaN*x, NaN, N, hx)
+    return StaticOptimizationResult(NaN, NaN*x, NaN, N, hx, false)
 end
 
 
@@ -121,5 +130,6 @@ function Base.show(io::IO, r::StaticOptimizationResult)
     @printf io " * |Df(x)|: [%s]\n" join(r.normjx, ",")
     @printf io " * Hf(x): [%s]\n" join(r.hx, ",")
     @printf io " * Number of iterations: [%s]\n" join(r.iter, ",")
+    @printf io " * Converged: [%s]\n" join(r.converged, ",")
     return
 end
