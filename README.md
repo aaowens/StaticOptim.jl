@@ -8,9 +8,7 @@
 
 # Example:
 ```
-julia> using StaticOptim
-
-julia> using StaticArrays
+julia> using StaticArrays, BenchmarkTools, StaticOptim
 
 julia> sx = @SVector ones(2)
 2-element StaticArrays.SArray{Tuple{2},Float64,1,2}:
@@ -25,11 +23,13 @@ julia> sx = 3.2 * sx
 julia> rosenbrock(x) =  (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
 rosenbrock (generic function with 1 method)
 
-julia> res = soptimize(rosenbrock, sx)
+julia> @btime soptimize(rosenbrock, $sx)
+  5.928 μs (0 allocations: 0 bytes)
 Results of Static Optimization Algorithm
- * Minimizer: [1.0000000000007898,1.0000000000014029]
- * Minimum: [3.7477721082170814e-24]
- * |Df(x)|: [8.045984853069932e-11]
- * Hf(x): [809.0962085236879,-403.47047521120845,-403.47047521102013,201.69727239400734]
+ * Minimizer: [1.00000000000079,1.0000000000014035]
+ * Minimum: [3.7402786691745805e-24]
+ * |Df(x)|: [8.03609499330041e-11]
+ * Hf(x): [809.094042962608,-403.46938387131536,-403.4693838713215,201.6967228908349]
  * Number of iterations: [58]
+ * Converged: [true]
 ```
