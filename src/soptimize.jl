@@ -11,11 +11,12 @@
     maxstep::TF = Inf
 end
 
-struct StaticOptimizationResult{TS <: SVector}
+struct StaticOptimizationResult{TS <: SVector, TV <: SMatrix}
     minimum::Float64
     minimizer::TS
     normjx::Float64
     iter::Int
+    hx::TV
 end
 
 function soptimize(f, x::StaticVector)
@@ -32,9 +33,9 @@ function soptimize(f, x::StaticVector)
     for n = 1:N
         res = ForwardDiff.gradient!(res, f, x) # Obtain gradient
         ϕ_0 = DiffBase.value(res)
-        isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n)
+        isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx)
         jx = DiffBase.gradient(res)
-        norm(jx) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx), n)
+        norm(jx) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx), n, hx)
         if n > 1 # update hessian
             y = jx - jold
             ForwardDiff.hessian(f, x)
@@ -43,7 +44,7 @@ function soptimize(f, x::StaticVector)
         s = -hx\jx # Obtain direction
         dϕ_0 = dot(jx, s)
 
-        #### Perform line search 
+        #### Perform line search
 
         # Count the total number of iterations
         iteration = 0
@@ -109,5 +110,16 @@ function soptimize(f, x::StaticVector)
         x = x + s # Update x
         jold = copy(jx)
     end
-    return StaticOptimizationResult(NaN, NaN*x, NaN, N)
+    return StaticOptimizationResult(NaN, NaN*x, NaN, N, hx)
+end
+
+
+function Base.show(io::IO, r::StaticOptimizationResult)
+    @printf io "Results of Static Optimization Algorithm\n"
+    @printf io " * Minimizer: [%s]\n" join(r.minimizer, ",")
+    @printf io " * Minimum: [%s]\n" join(r.minimum, ",")
+    @printf io " * |Df(x)|: [%s]\n" join(r.normjx, ",")
+    @printf io " * Hf(x): [%s]\n" join(r.hx, ",")
+    @printf io " * Number of iterations: [%s]\n" join(r.iter, ",")
+    return
 end

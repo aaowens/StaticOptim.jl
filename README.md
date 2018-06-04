@@ -8,15 +8,28 @@
 
 # Example:
 ```
-using StaticOptim
-using StaticArrays
-sx = @SVector ones(2)
-sx = 3.2 * sx
-rosenbrock(x) =  (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
+julia> using StaticOptim
+
+julia> using StaticArrays
+
+julia> sx = @SVector ones(2)
+2-element StaticArrays.SArray{Tuple{2},Float64,1,2}:
+ 1.0
+ 1.0
+
+julia> sx = 3.2 * sx
+2-element StaticArrays.SArray{Tuple{2},Float64,1,2}:
+ 3.2
+ 3.2
+
+julia> rosenbrock(x) =  (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
+rosenbrock (generic function with 1 method)
 
 julia> res = soptimize(rosenbrock, sx)
-StaticOptim.StaticOptimizationResult{StaticArrays.SArray{Tuple{2},Float64,1,2}}(3.7477721082170814e-24, [1.0, 1.0], 8.045984853069932e-11, 58)
-
+Results of Static Optimization Algorithm
+ * Minimizer: [1.0000000000007898,1.0000000000014029]
+ * Minimum: [3.7477721082170814e-24]
+ * |Df(x)|: [8.045984853069932e-11]
+ * Hf(x): [809.0962085236879,-403.47047521120845,-403.47047521102013,201.69727239400734]
+ * Number of iterations: [58]
 ```
-
-
