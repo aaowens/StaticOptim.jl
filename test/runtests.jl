@@ -57,3 +57,18 @@ res = soptimize(powell, sx)
 @test res.converged == true
 res = soptimize(powell, sx/2)
 @test res.converged == true
+
+
+### Univariate tests
+
+f(x) = x^2 + 2*x
+res = soptimize(f, 1.)
+@test res.converged == true
+
+function U(x)
+    x = max(0., x)
+    log(x)
+end
+f(h) = -(U(0.2 + h) + U(1 - h))
+res = soptimize(f, 0.9)
+@test res.converged == true
