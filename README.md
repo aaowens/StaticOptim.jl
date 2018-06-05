@@ -33,3 +33,26 @@ Results of Static Optimization Algorithm
  * Number of iterations: [58]
  * Converged: [true]
 ```
+# Example of univariate derivative based optimization with numbers, not StaticArrays
+```
+julia> using StaticOptim, BenchmarkTools
+
+julia> function U(x)
+           x = max(0., x)
+           log(x)
+       end
+U (generic function with 1 method)
+
+julia> f(h) = -(U(0.2 + h) + U(1 - h))
+f (generic function with 1 method)
+
+julia> @btime soptimize(f, 0.9)
+  886.531 ns (0 allocations: 0 bytes)
+Results of Static Optimization Algorithm
+ * Minimizer: [0.39999999998562896]
+ * Minimum: [1.0216512475319814]
+ * |Df(x)|: [7.983924632526396e-11]
+ * Hf(x): [5.555569904413021]
+ * Number of iterations: [6]
+ * Converged: [true]
+```
