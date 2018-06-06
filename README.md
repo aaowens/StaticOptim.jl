@@ -24,11 +24,11 @@ julia> rosenbrock(x) =  (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
 rosenbrock (generic function with 1 method)
 
 julia> @btime soptimize(rosenbrock, $sx)
-  5.928 μs (0 allocations: 0 bytes)
+  5.869 μs (0 allocations: 0 bytes)
 Results of Static Optimization Algorithm
  * Minimizer: [1.00000000000079,1.0000000000014035]
  * Minimum: [3.7402786691745805e-24]
- * |Df(x)|: [8.03609499330041e-11]
+ * |Df(x)|: [7.219025377486226e-11]
  * Hf(x): [809.094042962608,-403.46938387131536,-403.4693838713215,201.6967228908349]
  * Number of iterations: [58]
  * Converged: [true]

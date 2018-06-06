@@ -40,8 +40,8 @@ function soptimize(f, x::StaticVector)
         ϕ_0 = DiffBase.value(res)
         isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx, false)
         jx = DiffBase.gradient(res)
-        norm(jx) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx), n, hx, true)
-        n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx), n, hx, false)
+        norm(jx, Inf) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, true)
+        n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, false)
         if n > 1 # update hessian
             y = jx - jold
             hx = norm(y) < eps(eltype(x)) ? hx : hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
@@ -140,8 +140,8 @@ function soptimize(f, x::Number)
         ϕ_0 = DiffBase.value(res)
         isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx, false)
         jx = DiffBase.derivative(res)
-        norm(jx) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx), n, hx, true)
-        n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx), n, hx, false)
+        norm(jx, Inf) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, true)
+        n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, false)
         if n > 1 # update hessian
             y = jx - jold
             hx = norm(y) < eps(eltype(x)) ? hx : hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
