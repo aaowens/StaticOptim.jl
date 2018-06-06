@@ -24,7 +24,18 @@ julia> rosenbrock(x) =  (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
 rosenbrock (generic function with 1 method)
 
 julia> @btime soptimize(rosenbrock, $sx)
-  5.869 μs (0 allocations: 0 bytes)
+  2.835 μs (0 allocations: 0 bytes)
+Results of Static Optimization Algorithm
+ * Minimizer: [0.9999999999990606,0.9999999999980389]
+ * Minimum: [1.5610191722141176e-24]
+ * |Df(x)|: [3.1072699968573e-11]
+ * Hf(x): [801.6874976886638,-399.8345645795701,-399.83456457957504,199.9124176978296]
+ * Number of iterations: [31]
+ * Converged: [true]
+
+# You can change from quadratic to cubic linesearch, but it isn't as fast here
+ julia> @btime soptimize(rosenbrock, $sx, StaticOptim.Order3())
+  5.837 μs (0 allocations: 0 bytes)
 Results of Static Optimization Algorithm
  * Minimizer: [1.00000000000079,1.0000000000014035]
  * Minimum: [3.7402786691745805e-24]
@@ -32,6 +43,7 @@ Results of Static Optimization Algorithm
  * Hf(x): [809.094042962608,-403.46938387131536,-403.4693838713215,201.6967228908349]
  * Number of iterations: [58]
  * Converged: [true]
+
 ```
 # Example of univariate derivative based optimization with numbers, not StaticArrays
 ```

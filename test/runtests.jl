@@ -13,6 +13,8 @@ sx = 3.2 * sx
 rosenbrock(x) =  (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
 res = soptimize(rosenbrock, sx)
 @test res.converged == true
+res = soptimize(rosenbrock, sx, StaticOptim.Order3())
+@test res.converged == true
 res = soptimize(rosenbrock, sx/2)
 @test res.converged == true
 
