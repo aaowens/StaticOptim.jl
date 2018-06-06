@@ -9,9 +9,14 @@
     ρ_hi::TF = 0.5
     ρ_lo::TF = 0.1
     iterations::TI = 1_000
-    order::TI = 3
     maxstep::TF = Inf
 end
+
+abstract type BackTrackingOrder end 
+struct Order2 <: BackTrackingOrder end
+struct Order3 <: BackTrackingOrder end
+ordernum(::Order2) = 2
+ordernum(::Order3) = 3
 
 struct StaticOptimizationResult{TS <: Union{SVector, Number}, TV <: Union{SMatrix, Number}}
     minimum::Float64
@@ -22,15 +27,16 @@ struct StaticOptimizationResult{TS <: Union{SVector, Number}, TV <: Union{SMatri
     converged::Bool
 end
 
-function soptimize(f, x::StaticVector)
+function soptimize(f, x::StaticVector, bto::BackTrackingOrder = Order2())
     res = DiffBase.GradientResult(x)
     ls = BackTracking()
+    order = ordernum(bto)
     tol = 1e-8
     x_new = copy(x)
     hx = diagm(ones(x))
     hold = copy(hx)
     jold = copy(x); s = copy(x)
-    @unpack c_1, ρ_hi, ρ_lo, iterations, order = ls
+    @unpack c_1, ρ_hi, ρ_lo, iterations = ls
     iterfinitemax = -log2(eps(eltype(x)))
     sqrttol = sqrt(eps(Float64))
     α_0 = 1.
@@ -122,15 +128,16 @@ function soptimize(f, x::StaticVector)
     return StaticOptimizationResult(NaN, NaN*x, NaN, N, hx, false)
 end
 
-function soptimize(f, x::Number)
+function soptimize(f, x::Number, bto::BackTrackingOrder = Order2())
     res = DiffBase.DiffResult(x, (x,))
     ls = BackTracking()
+    order = ordernum(bto)
     tol = 1e-8
     x_new = copy(x)
     hx = one(x)
     hold = copy(hx)
     jold = copy(x); s = copy(x)
-    @unpack c_1, ρ_hi, ρ_lo, iterations, order = ls
+    @unpack c_1, ρ_hi, ρ_lo, iterations = ls
     iterfinitemax = -log2(eps(eltype(x)))
     sqrttol = sqrt(eps(Float64))
     α_0 = 1.
