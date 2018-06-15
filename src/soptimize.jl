@@ -12,9 +12,10 @@
     maxstep::TF = Inf
 end
 
-abstract type BackTrackingOrder end 
+abstract type BackTrackingOrder end
 struct Order2 <: BackTrackingOrder end
 struct Order3 <: BackTrackingOrder end
+struct Order0 <: BackTrackingOrder end
 ordernum(::Order2) = 2
 ordernum(::Order3) = 3
 
@@ -27,13 +28,16 @@ struct StaticOptimizationResult{TS <: Union{SVector, Number}, TV <: Union{SMatri
     converged::Bool
 end
 
-function soptimize(f, x::StaticVector, bto::BackTrackingOrder = Order2())
+function soptimize(f, x::StaticVector, bto::BackTrackingOrder = Order2(), hguess = nothing)
     res = DiffBase.GradientResult(x)
     ls = BackTracking()
     order = ordernum(bto)
     tol = 1e-8
     x_new = copy(x)
     hx = diagm(ones(x))
+    if !(hguess isa Void)
+        hx = hguess * hx
+    end
     hold = copy(hx)
     jold = copy(x); s = copy(x)
     @unpack c_1, ρ_hi, ρ_lo, iterations = ls
@@ -128,7 +132,7 @@ function soptimize(f, x::StaticVector, bto::BackTrackingOrder = Order2())
     return StaticOptimizationResult(NaN, NaN*x, NaN, N, hx, false)
 end
 
-function soptimize(f, x::Number, bto::BackTrackingOrder = Order2())
+function soptimize(f, x::Number, bto::BackTrackingOrder = Order2(), hguess = nothing)
     res = DiffBase.DiffResult(x, (x,))
     ls = BackTracking()
     order = ordernum(bto)
@@ -136,6 +140,9 @@ function soptimize(f, x::Number, bto::BackTrackingOrder = Order2())
     x_new = copy(x)
     hx = one(x)
     hold = copy(hx)
+    if !(hguess isa Void)
+        hx = hguess*one(x)
+    end
     jold = copy(x); s = copy(x)
     @unpack c_1, ρ_hi, ρ_lo, iterations = ls
     iterfinitemax = -log2(eps(eltype(x)))
@@ -225,6 +232,55 @@ function soptimize(f, x::Number, bto::BackTrackingOrder = Order2())
         s = alpha*s
         x = x + s # Update x
         jold = copy(jx)
+    end
+    return StaticOptimizationResult(NaN, NaN*x, NaN, N, hx, false)
+end
+
+function soptimize(f, x::Number, bto::Order0, hguess = nothing)
+    res = DiffBase.DiffResult(x, (x,))
+    tol = 1e-8
+    hx = one(x)
+    hold = copy(hx)
+    iterfinitemax = -log2(eps(eltype(x)))
+    if !(hguess isa Void)
+        hx = hguess*one(x)
+    end
+    jold = copy(x); s = copy(x)
+    α_0 = 1.
+    N = 200
+    for n = 1:N
+        res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
+        ϕ_0 = DiffBase.value(res)
+        isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx, false)
+        jx = DiffBase.derivative(res)
+        norm(jx, Inf) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, true)
+        n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, false)
+        if n > 1 # update hessian
+            y = jx - jold
+            hx = abs(y) < eps(eltype(x)) ? hx : y / s
+        end
+        s = -jx/hx # Obtain direction
+        #### Perform line search
+
+        # Count the total number of iterations
+        iteration = 0
+        ϕx_0, ϕx_1 = ϕ_0, ϕ_0
+        α_1, α_2 = α_0, α_0
+        ϕx_1 = f(x + α_1*s)
+
+        # Hard-coded backtrack until we find a finite function value
+        iterfinite = 0
+        while !isfinite(ϕx_1) && iterfinite < iterfinitemax
+            iterfinite += 1
+            α_1 = α_2
+            α_2 = α_1/2
+            ϕx_1 = f(x + α_2*s)
+        end
+        alpha = α_2
+
+        s = alpha*s
+        x = x + s # Update x
+        jold = jx
     end
     return StaticOptimizationResult(NaN, NaN*x, NaN, N, hx, false)
 end
