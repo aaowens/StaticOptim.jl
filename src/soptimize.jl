@@ -29,7 +29,7 @@ struct StaticOptimizationResult{TS <: Union{SVector, Number}, TV <: Union{SMatri
 end
 
 function soptimize(f, x::StaticVector, bto::BackTrackingOrder = Order2(), hguess = nothing)
-    res = DiffBase.GradientResult(x)
+    res = DiffResults.GradientResult(x)
     ls = BackTracking()
     order = ordernum(bto)
     tol = 1e-8
@@ -47,9 +47,9 @@ function soptimize(f, x::StaticVector, bto::BackTrackingOrder = Order2(), hguess
     N = 200
     for n = 1:N
         res = ForwardDiff.gradient!(res, f, x) # Obtain gradient
-        ϕ_0 = DiffBase.value(res)
+        ϕ_0 = DiffResults.value(res)
         isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx, false)
-        jx = DiffBase.gradient(res)
+        jx = DiffResults.gradient(res)
         norm(jx, Inf) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, true)
         n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, false)
         if n > 1 # update hessian
@@ -133,7 +133,7 @@ function soptimize(f, x::StaticVector, bto::BackTrackingOrder = Order2(), hguess
 end
 
 function soptimize(f, x::Number, bto::BackTrackingOrder = Order2(), hguess = nothing)
-    res = DiffBase.DiffResult(x, (x,))
+    res = DiffResults.DiffResult(x, (x,))
     ls = BackTracking()
     order = ordernum(bto)
     tol = 1e-8
@@ -151,9 +151,9 @@ function soptimize(f, x::Number, bto::BackTrackingOrder = Order2(), hguess = not
     N = 200
     for n = 1:N
         res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
-        ϕ_0 = DiffBase.value(res)
+        ϕ_0 = DiffResults.value(res)
         isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx, false)
-        jx = DiffBase.derivative(res)
+        jx = DiffResults.derivative(res)
         norm(jx, Inf) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, true)
         n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, false)
         if n > 1 # update hessian
@@ -237,7 +237,7 @@ function soptimize(f, x::Number, bto::BackTrackingOrder = Order2(), hguess = not
 end
 
 function soptimize(f, x::Number, bto::Order0, hguess = nothing)
-    res = DiffBase.DiffResult(x, (x,))
+    res = DiffResults.DiffResult(x, (x,))
     tol = 1e-8
     hx = one(x)
     hold = copy(hx)
@@ -250,9 +250,9 @@ function soptimize(f, x::Number, bto::Order0, hguess = nothing)
     N = 200
     for n = 1:N
         res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
-        ϕ_0 = DiffBase.value(res)
+        ϕ_0 = DiffResults.value(res)
         isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx, false)
-        jx = DiffBase.derivative(res)
+        jx = DiffResults.derivative(res)
         norm(jx, Inf) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, true)
         n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, false)
         if n > 1 # update hessian
