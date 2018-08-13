@@ -28,7 +28,7 @@ struct StaticOptimizationResult{TS <: Union{SVector, Number}, TV <: Union{SMatri
     converged::Bool
 end
 
-function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order3(), hguess = nothing) where {P,T}
+function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(), hguess = nothing) where {P,T}
     res = DiffResults.GradientResult(x)
     ls = BackTracking()
     order = ordernum(bto)
