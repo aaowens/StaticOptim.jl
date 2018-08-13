@@ -6,6 +6,17 @@
 
 [![codecov.io](http://codecov.io/github/aaowens/StaticOptim.jl/coverage.svg?branch=master)](http://codecov.io/github/aaowens/StaticOptim.jl?branch=master)
 
+This package implements scalar and multivariate optimization routines optimized for low
+dimensional problems and cheap function calls. It also has two univariate root-finding
+routines: a modified Newton method and a bisection method. All functions except bisection
+use ForwardDiff to compute derivatives. They should not allocate if the input function does not,
+thanks in part to the stack allocated gradient methods for StaticArrays in ForwardDiff.
+
+The optimization uses the BFGS method with a quadratic or cubic backtracking linesearch
+inspired by LineSearches.jl. Root-finding with an initial guess is done using a modified
+Newton method which may not be very robust, but is fast in the problems I've tried.
+Root-finding with a bracket as a 2-tuple is done by bisection.
+
 # Example:
 ```
 julia> using StaticArrays, BenchmarkTools, StaticOptim
@@ -33,7 +44,7 @@ Results of Static Optimization Algorithm
  * Number of iterations: [31]
  * Converged: [true]
 
-
+# You can use the cubic linesearch, but it isn't as efficient here
 julia> @btime soptimize(rosenbrock, $sx, StaticOptim.Order3())
   4.520 μs (0 allocations: 0 bytes)
 Results of Static Optimization Algorithm
@@ -77,11 +88,11 @@ up (generic function with 1 method)
 julia> f(a) = up(2 - a) - .96up(2 + a)
 f (generic function with 1 method)
 
-julia> @btime snewton(f, 0.5)
+julia> @btime sroot(f, 0.5)
   154.025 ns (0 allocations: 0 bytes)
 (-4.027922440030807e-11, -0.04081632661278052)
 
-julia> @btime bisection(f, -0.5, 0.5)
+julia> @btime sroot(f, (-0.5, 0.5))
   223.031 ns (0 allocations: 0 bytes)
 (x = -0.040816307067871094, fx = 9.54071677217172e-9, isroot = true, iter = 20, ismaxiter = false)
 ```

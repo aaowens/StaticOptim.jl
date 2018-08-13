@@ -298,8 +298,17 @@ function Base.show(io::IO, r::StaticOptimizationResult)
 end
 
 
-
+### Modified Newton algorithm
+# I made this up, I do not know if it has nice convergence properties
+# It first computes the value and derivative and performs a Newton step
+# Then it computes the value and the potentially unnecessary derivative at the Newton point
+# If this an improvement (closer to 0), the Newton step is accepted and it performs another Newton step
+# If this is worse, it backtracks if the candidate is not finite
+# Then it performs a Halley step using the function value at the candidate point
+# If this is an improvement, the Halley step is accepted
+# If it's still not an improvement, simple backtracking is done until it is
 function snewton(f, x::Number)
+    x = float(x)
     res = DiffResults.DiffResult(x, (x,))
     tol = 1e-8
     iterfinitemax = -log2(eps(eltype(x)))
@@ -390,6 +399,7 @@ which are tested for in the above order. Therefore, care should be taken not to 
 """
 function bisection(f, a::Real, b::Real; fa::Real = f(a), fb::Real = f(b),
                    ftol = √eps(), wtol = 0, maxiter = 100)
+                   a, b = float(a), float(b)
     @assert fa * fb ≤ 0 "initial values don't bracket zero"
     @assert isfinite(a) && isfinite(b)
     _bisection(f, float.(promote(a, b, fa, fb, ftol, wtol))..., maxiter)
@@ -413,3 +423,7 @@ function _bisection(f, a, b, fa, fb, ftol, wtol, maxiter)
         iter == maxiter && return (x = m, fx = fm, isroot = false, iter = iter, ismaxiter = true)
     end
 end
+
+
+sroot(f, x::Number) = snewton(f, x)
+sroot(f, x::Tuple{T, T}) where T <: Number = bisection(f, x[1], x[2])
