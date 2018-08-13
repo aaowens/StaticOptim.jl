@@ -78,7 +78,7 @@ res = soptimize(f, 0.9)
 ### Root finding
 up(c) = c <= 0 ? Inf*c : 1/c
 f(a) = up(2 - a) - .96up(2 + a)
-out = snewton(f, 0.5)
+out = sroot(f, 0.5)
 @test out[1] < 1e-8
 
-@test bisection(f, -0.5, 0.5).isroot == true
+@test sroot(f, (-0.5, 0.5)).isroot == true
