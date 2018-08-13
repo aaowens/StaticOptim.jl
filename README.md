@@ -89,8 +89,8 @@ julia> f(a) = up(2 - a) - .96up(2 + a)
 f (generic function with 1 method)
 
 julia> @btime sroot(f, 0.5)
-  154.025 ns (0 allocations: 0 bytes)
-(-4.027922440030807e-11, -0.04081632661278052)
+  154.103 ns (0 allocations: 0 bytes)
+(x = -0.04081632661278052, fx = -4.027922440030807e-11)
 
 julia> @btime sroot(f, (-0.5, 0.5))
   223.031 ns (0 allocations: 0 bytes)

@@ -316,8 +316,8 @@ function snewton(f, x::Number)
     N = 200
     res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
     ϕ_0 = DiffResults.value(res)
-    abs(ϕ_0) < tol && return(ϕ_0, x)
-    isfinite(ϕ_0) || return (NaN, NaN*x)
+    abs(ϕ_0) < tol && return (x = x, fx = ϕ_0)
+    isfinite(ϕ_0) || return (x = NaN*x, fx = NaN)
 
     needsupdate = false
     for n = 1:N
@@ -326,8 +326,8 @@ function snewton(f, x::Number)
             needsupdate = false
         end
         ϕ_0 = DiffResults.value(res)
-        abs(ϕ_0) < tol && return(ϕ_0, x)
-        isfinite(ϕ_0) || return (NaN, NaN*x)
+        abs(ϕ_0) < tol && return (x = x, fx = ϕ_0)
+        isfinite(ϕ_0) || return (x = NaN*x, fx = NaN)
         jx = DiffResults.derivative(res)
         x2 = x - ϕ_0/jx
 
@@ -337,7 +337,7 @@ function snewton(f, x::Number)
         α_1, α_2 = α_0, α_0
         res = ForwardDiff.derivative!(res, f, x2) # Obtain gradient
         ϕx_1 = DiffResults.value(res)
-        abs(ϕx_1) < tol && return(ϕx_1, x2)
+        abs(ϕx_1) < tol && return (x = x2, fx = ϕx_1)
 
         # Hard-coded backtrack until we find a finite function value
         iterfinite = 0
@@ -373,7 +373,7 @@ function snewton(f, x::Number)
         end
         x = x2
     end
-    return (NaN, NaN*x)
+    return (x = NaN*x, fx = NaN)
 end
 
 ### Copied from Tamas Papp on Discourse
