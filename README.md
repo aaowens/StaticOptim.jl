@@ -80,4 +80,8 @@ f (generic function with 1 method)
 julia> @btime snewton(f, 0.5)
   154.025 ns (0 allocations: 0 bytes)
 (-4.027922440030807e-11, -0.04081632661278052)
+
+julia> @btime bisection(f, -0.5, 0.5)
+  223.031 ns (0 allocations: 0 bytes)
+(x = -0.040816307067871094, fx = 9.54071677217172e-9, isroot = true, iter = 20, ismaxiter = false)
 ```
