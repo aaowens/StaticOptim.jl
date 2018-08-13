@@ -28,14 +28,14 @@ struct StaticOptimizationResult{TS <: Union{SVector, Number}, TV <: Union{SMatri
     converged::Bool
 end
 
-function soptimize(f, x::StaticVector, bto::BackTrackingOrder = Order2(), hguess = nothing)
+function soptimize(f, x::StaticVector, bto::BackTrackingOrder = Order3(), hguess = nothing)
     res = DiffResults.GradientResult(x)
     ls = BackTracking()
     order = ordernum(bto)
     tol = 1e-8
     x_new = copy(x)
     hx = diagm(ones(x))
-    if !(hguess isa Void)
+    if !(hguess isa Nothing)
         hx = hguess * hx
     end
     hold = copy(hx)
@@ -132,15 +132,15 @@ function soptimize(f, x::StaticVector, bto::BackTrackingOrder = Order2(), hguess
     return StaticOptimizationResult(NaN, NaN*x, NaN, N, hx, false)
 end
 
-function soptimize(f, x::Number, bto::BackTrackingOrder = Order2(), hguess = nothing)
+
+function soptimize(f, x::Number, hguess = nothing)
     res = DiffResults.DiffResult(x, (x,))
     ls = BackTracking()
-    order = ordernum(bto)
     tol = 1e-8
     x_new = copy(x)
     hx = one(x)
     hold = copy(hx)
-    if !(hguess isa Void)
+    if !(hguess isa Nothing)
         hx = hguess*one(x)
     end
     jold = copy(x); s = copy(x)
@@ -149,8 +149,18 @@ function soptimize(f, x::Number, bto::BackTrackingOrder = Order2(), hguess = not
     sqrttol = sqrt(eps(Float64))
     α_0 = 1.
     N = 200
+
+    res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
+    ϕ_0 = DiffResults.value(res)
+    isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, 1, hx, false)
+    jx = DiffResults.derivative(res)
+    norm(jx, Inf) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), 1, hx, true)
+    needsupdate = false
     for n = 1:N
-        res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
+        if needsupdate
+            res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
+            needsupdate = false
+        end
         ϕ_0 = DiffResults.value(res)
         isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx, false)
         jx = DiffResults.derivative(res)
@@ -158,7 +168,7 @@ function soptimize(f, x::Number, bto::BackTrackingOrder = Order2(), hguess = not
         n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, false)
         if n > 1 # update hessian
             y = jx - jold
-            hx = norm(y) < eps(eltype(x)) ? hx : hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
+            hx =  y / s
         end
         s = -hx\jx # Obtain direction
         dϕ_0 = dot(jx, s)
@@ -173,11 +183,14 @@ function soptimize(f, x::Number, bto::BackTrackingOrder = Order2(), hguess = not
         iteration = 0
         ϕx_0, ϕx_1 = ϕ_0, ϕ_0
         α_1, α_2 = α_0, α_0
-        ϕx_1 = f(x + α_1*s)
+        res = ForwardDiff.derivative!(res, f, x + α_1*s) # Obtain gradient
+
+        ϕx_1 = DiffResults.value(res)
 
         # Hard-coded backtrack until we find a finite function value
         iterfinite = 0
         while !isfinite(ϕx_1) && iterfinite < iterfinitemax
+            needsupdate = true
             iterfinite += 1
             α_1 = α_2
             α_2 = α_1/2
@@ -186,6 +199,7 @@ function soptimize(f, x::Number, bto::BackTrackingOrder = Order2(), hguess = not
 
         # Backtrack until we satisfy sufficient decrease condition
         while ϕx_1 > ϕ_0 + c_1 * α_2 * dϕ_0
+            needsupdate = true
             # Increment the number of steps we've had to perform
             iteration += 1
 
@@ -196,29 +210,15 @@ function soptimize(f, x::Number, bto::BackTrackingOrder = Order2(), hguess = not
             end
 
             # Shrink proposed step-size:
-            if order == 2 || iteration == 1
-                # backtracking via quadratic interpolation:
-                # This interpolates the available data
-                #    f(0), f'(0), f(α)
-                # with a quadractic which is then minimised; this comes with a
-                # guaranteed backtracking factor 0.5 * (1-c_1)^{-1} which is < 1
-                # provided that c_1 < 1/2; the backtrack_condition at the beginning
-                # of the function guarantees at least a backtracking factor ρ.
-                α_tmp = - (dϕ_0 * α_2^2) / ( 2 * (ϕx_1 - ϕ_0 - dϕ_0*α_2) )
-            else
-                div = 1. / (α_1^2 * α_2^2 * (α_2 - α_1))
-                a = (α_1^2*(ϕx_1 - ϕ_0 - dϕ_0*α_2) - α_2^2*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
-                b = (-α_1^3*(ϕx_1 - ϕ_0 - dϕ_0*α_2) + α_2^3*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
 
-                if norm(a) <= eps(Float64) + sqrttol*norm(a)
-                    α_tmp = dϕ_0 / (2*b)
-                else
-                    # discriminant
-                    d = max(b^2 - 3*a*dϕ_0, 0.)
-                    # quadratic equation root
-                    α_tmp = (-b + sqrt(d)) / (3*a)
-                end
-            end
+            # backtracking via quadratic interpolation:
+            # This interpolates the available data
+            #    f(0), f'(0), f(α)
+            # with a quadractic which is then minimised; this comes with a
+            # guaranteed backtracking factor 0.5 * (1-c_1)^{-1} which is < 1
+            # provided that c_1 < 1/2; the backtrack_condition at the beginning
+            # of the function guarantees at least a backtracking factor ρ.
+            α_tmp = - (dϕ_0 * α_2^2) / ( 2 * (ϕx_1 - ϕ_0 - dϕ_0*α_2) )
             α_1 = α_2
 
             α_tmp = NaNMath.min(α_tmp, α_2*ρ_hi) # avoid too small reductions
@@ -242,7 +242,7 @@ function soptimize(f, x::Number, bto::Order0, hguess = nothing)
     hx = one(x)
     hold = copy(hx)
     iterfinitemax = -log2(eps(eltype(x)))
-    if !(hguess isa Void)
+    if !(hguess isa Nothing)
         hx = hguess*one(x)
     end
     jold = copy(x); s = copy(x)
@@ -295,4 +295,74 @@ function Base.show(io::IO, r::StaticOptimizationResult)
     @printf io " * Number of iterations: [%s]\n" join(r.iter, ",")
     @printf io " * Converged: [%s]\n" join(r.converged, ",")
     return
+end
+
+
+
+function snewton(f, x::Number)
+    res = DiffResults.DiffResult(x, (x,))
+    tol = 1e-8
+    iterfinitemax = -log2(eps(eltype(x)))
+    α_0 = 1.
+    N = 200
+    res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
+    ϕ_0 = DiffResults.value(res)
+    abs(ϕ_0) < tol && return(ϕ_0, x)
+    isfinite(ϕ_0) || return (NaN, NaN*x)
+
+    needsupdate = false
+    for n = 1:N
+        if needsupdate
+            res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
+            needsupdate = false
+        end
+        ϕ_0 = DiffResults.value(res)
+        abs(ϕ_0) < tol && return(ϕ_0, x)
+        isfinite(ϕ_0) || return (NaN, NaN*x)
+        jx = DiffResults.derivative(res)
+        x2 = x - ϕ_0/jx
+
+        # Count the total number of iterations
+        iteration = 0
+        ϕx_0, ϕx_1 = ϕ_0, ϕ_0
+        α_1, α_2 = α_0, α_0
+        res = ForwardDiff.derivative!(res, f, x2) # Obtain gradient
+        ϕx_1 = DiffResults.value(res)
+        abs(ϕx_1) < tol && return(ϕx_1, x2)
+
+        # Hard-coded backtrack until we find a finite function value
+        iterfinite = 0
+        x2old = x2
+        while !isfinite(ϕx_1) && iterfinite < iterfinitemax
+            needsupdate = true
+            iterfinite += 1
+            α_1 = α_2
+            α_2 = α_1/2
+            x2 = (1 - α_2)*x + α_2*x2old # convex combination
+            ϕx_1 = f(x2)
+        end
+
+        α_h = 1.
+        # Backtrack until we satisfy sufficient decrease condition
+        if abs(ϕx_1) > abs(ϕx_0) # Closer to 0?
+            needsupdate = true
+            # Increment the number of steps we've had to perform
+            # Interpolate available data using quadratic
+            hx = 2(ϕx_1 - ϕx_0 - jx*(x2 - x) ) / (x2 - x)^2 # Taylor approximation
+            x2 = x - 2ϕx_0*jx / (2jx^2 - ϕx_0*hx) # Halley step
+            ϕx_1 = f(x2)
+            iteration = 0
+            # If still not closer to 0, do simple backtracking until we are
+            while abs(ϕx_1) > abs(ϕx_0)
+                iteration += 1
+                α_1 = α_h
+                α_2 = α_1/2
+                x2 = (1 - α_2)*x + α_2*x2 # convex combination
+                ϕx_1 = f(x2)
+                iteration > 30 && error("Failed to converge")
+            end
+        end
+        x = x2
+    end
+    return (NaN, NaN*x)
 end
