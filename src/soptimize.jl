@@ -28,13 +28,13 @@ struct StaticOptimizationResult{TS <: Union{SVector, Number}, TV <: Union{SMatri
     converged::Bool
 end
 
-function soptimize(f, x::StaticVector, bto::BackTrackingOrder = Order3(), hguess = nothing)
+function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order3(), hguess = nothing) where {P,T}
     res = DiffResults.GradientResult(x)
     ls = BackTracking()
     order = ordernum(bto)
     tol = 1e-8
     x_new = copy(x)
-    hx = diagm(ones(x))
+    hx = SMatrix{P,P,T}(I)
     if !(hguess isa Nothing)
         hx = hguess * hx
     end
