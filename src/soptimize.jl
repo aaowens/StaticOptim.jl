@@ -19,8 +19,10 @@ struct Order0 <: BackTrackingOrder end
 ordernum(::Order2) = 2
 ordernum(::Order3) = 3
 
-struct StaticOptimizationResult{TS <: Union{SVector, Number}, TV <: Union{SMatrix, Number}}
-    minimum::Float64
+struct BFGS end
+struct StaticOptimizationResults{O, Tf <: AbstractFloat, Tx <: Union{SVector, Number}, TV <: Union{SMatrix, Number}}
+    method::O
+    minimum::Tf
     minimizer::TS
     normjx::Float64
     iter::Int
@@ -28,11 +30,24 @@ struct StaticOptimizationResult{TS <: Union{SVector, Number}, TV <: Union{SMatri
     converged::Bool
 end
 
-function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(), hguess = nothing) where {P,T}
+struct StaticOptimizationResults{O, T, Tx, Th, Tf, M}
+    method::O
+    initial_x::Tx
+    minimizer::Tx
+    minimum::Tf
+    iterations::Int
+    g_converged::Bool
+    g_tol::T
+    f_calls::Int
+    g_calls::Int
+    h::Th
+end
+
+function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(), hguess = nothing; tol = 1e-8) where {P,T}
     res = DiffResults.GradientResult(x)
     ls = BackTracking()
     order = ordernum(bto)
-    tol = 1e-8
+    xinit = copy(x)
     x_new = copy(x)
     hx = SMatrix{P,P,T}(I)
     if !(hguess isa Nothing)
@@ -45,13 +60,16 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(), h
     sqrttol = sqrt(eps(Float64))
     α_0 = 1.
     N = 200
+    f_calls = 0
+    g_calls = 0
     for n = 1:N
-        res = ForwardDiff.gradient!(res, f, x) # Obtain gradient
+        res = ForwardDiff.gradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
         ϕ_0 = DiffResults.value(res)
-        isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx, false)
+        isfinite(ϕ_0) || return StaticOptimizationResults(BFGS(), xold, NaN*x,
+        NaN, n, false, tol, f_calls, g_calls, hx)
         jx = DiffResults.gradient(res)
-        norm(jx, Inf) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, true)
-        n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, false)
+        norm(jx, Inf) < tol && return StaticOptimizationResults(BFGS(), xold, x,
+        ϕ_0, n, true, tol, f_calls, g_calls, hx)
         if n > 1 # update hessian
             y = jx - jold
             hx = norm(y) < eps(eltype(x)) ? hx : hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
@@ -69,7 +87,7 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(), h
         iteration = 0
         ϕx_0, ϕx_1 = ϕ_0, ϕ_0
         α_1, α_2 = α_0, α_0
-        ϕx_1 = f(x + α_1*s)
+        ϕx_1 = f(x + α_1*s); f_calls += 1;
 
         # Hard-coded backtrack until we find a finite function value
         iterfinite = 0
@@ -77,7 +95,7 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(), h
             iterfinite += 1
             α_1 = α_2
             α_2 = α_1/2
-            ϕx_1 = f(x + α_2*s)
+            ϕx_1 = f(x + α_2*s); f_calls += 1;
         end
 
         # Backtrack until we satisfy sufficient decrease condition
@@ -121,7 +139,7 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(), h
             α_2 = NaNMath.max(α_tmp, α_2*ρ_lo) # avoid too big reductions
 
             # Evaluate f(x) at proposed position
-            ϕx_0, ϕx_1 = ϕx_1, f(x + α_2*s)
+            ϕx_0, ϕx_1 = ϕx_1, f(x + α_2*s); f_calls += 1;
         end
         alpha, fpropose = α_2, ϕx_1
 
@@ -129,7 +147,8 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(), h
         x = x + s # Update x
         jold = copy(jx)
     end
-    return StaticOptimizationResult(NaN, NaN*x, NaN, N, hx, false)
+    return StaticOptimizationResults(BFGS(), xold, NaN*x,
+    NaN, n, false, tol, f_calls, g_calls, hx)
 end
 
 
@@ -152,9 +171,9 @@ function soptimize(f, x::Number, hguess = nothing)
 
     res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
     ϕ_0 = DiffResults.value(res)
-    isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, 1, hx, false)
+    isfinite(ϕ_0) || return StaticOptimizationResults(NaN, NaN*x, NaN, 1, hx, false)
     jx = DiffResults.derivative(res)
-    norm(jx, Inf) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), 1, hx, true)
+    norm(jx, Inf) < tol && return StaticOptimizationResults(ϕ_0, x, norm(jx, Inf), 1, hx, true)
     needsupdate = false
     for n = 1:N
         if needsupdate
@@ -162,10 +181,10 @@ function soptimize(f, x::Number, hguess = nothing)
             needsupdate = false
         end
         ϕ_0 = DiffResults.value(res)
-        isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx, false)
+        isfinite(ϕ_0) || return StaticOptimizationResults(NaN, NaN*x, NaN, n, hx, false)
         jx = DiffResults.derivative(res)
-        norm(jx, Inf) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, true)
-        n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, false)
+        norm(jx, Inf) < tol && return StaticOptimizationResults(ϕ_0, x, norm(jx, Inf), n, hx, true)
+        n == N && return StaticOptimizationResults(ϕ_0, x, norm(jx, Inf), n, hx, false)
         if n > 1 # update hessian
             y = jx - jold
             hx =  y / s
@@ -233,7 +252,7 @@ function soptimize(f, x::Number, hguess = nothing)
         x = x + s # Update x
         jold = copy(jx)
     end
-    return StaticOptimizationResult(NaN, NaN*x, NaN, N, hx, false)
+    return StaticOptimizationResults(NaN, NaN*x, NaN, N, hx, false)
 end
 
 function soptimize(f, x::Number, bto::Order0, hguess = nothing)
@@ -251,10 +270,10 @@ function soptimize(f, x::Number, bto::Order0, hguess = nothing)
     for n = 1:N
         res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
         ϕ_0 = DiffResults.value(res)
-        isfinite(ϕ_0) || return StaticOptimizationResult(NaN, NaN*x, NaN, n, hx, false)
+        isfinite(ϕ_0) || return StaticOptimizationResults(NaN, NaN*x, NaN, n, hx, false)
         jx = DiffResults.derivative(res)
-        norm(jx, Inf) < tol && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, true)
-        n == N && return StaticOptimizationResult(ϕ_0, x, norm(jx, Inf), n, hx, false)
+        norm(jx, Inf) < tol && return StaticOptimizationResults(ϕ_0, x, norm(jx, Inf), n, hx, true)
+        n == N && return StaticOptimizationResults(ϕ_0, x, norm(jx, Inf), n, hx, false)
         if n > 1 # update hessian
             y = jx - jold
             hx = abs(y) < eps(eltype(x)) ? hx : y / s
@@ -282,11 +301,11 @@ function soptimize(f, x::Number, bto::Order0, hguess = nothing)
         x = x + s # Update x
         jold = jx
     end
-    return StaticOptimizationResult(NaN, NaN*x, NaN, N, hx, false)
+    return StaticOptimizationResults(NaN, NaN*x, NaN, N, hx, false)
 end
 
 
-function Base.show(io::IO, r::StaticOptimizationResult)
+function Base.show(io::IO, r::StaticOptimizationResults)
     @printf io "Results of Static Optimization Algorithm\n"
     @printf io " * Minimizer: [%s]\n" join(r.minimizer, ",")
     @printf io " * Minimum: [%s]\n" join(r.minimum, ",")
