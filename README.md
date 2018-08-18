@@ -35,24 +35,26 @@ julia> rosenbrock(x) =  (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
 rosenbrock (generic function with 1 method)
 
 julia> @btime soptimize(rosenbrock, $sx)
-  2.175 μs (0 allocations: 0 bytes)
+  2.189 μs (0 allocations: 0 bytes)
 Results of Static Optimization Algorithm
  * Minimizer: [0.9999999999990606,0.9999999999980389]
  * Minimum: [1.5610191722141176e-24]
- * |Df(x)|: [3.1072699968573e-11]
  * Hf(x): [801.6874976886638,-399.8345645795701,-399.83456457957504,199.9124176978296]
  * Number of iterations: [31]
+ * Number of function calls: [69]
+ * Number of gradient calls: [31]
  * Converged: [true]
 
 # You can use the cubic linesearch, but it isn't as efficient here
 julia> @btime soptimize(rosenbrock, $sx, StaticOptim.Order3())
-  4.520 μs (0 allocations: 0 bytes)
+  4.610 μs (0 allocations: 0 bytes)
 Results of Static Optimization Algorithm
  * Minimizer: [1.00000000000079,1.0000000000014035]
  * Minimum: [3.7402786691745805e-24]
- * |Df(x)|: [7.219025377486226e-11]
  * Hf(x): [809.094042962608,-403.46938387131536,-403.4693838713215,201.6967228908349]
  * Number of iterations: [58]
+ * Number of function calls: [141]
+ * Number of gradient calls: [58]
  * Converged: [true]
 
 ```
@@ -70,13 +72,14 @@ julia> f(h) = -(U(0.2 + h) + U(1 - h))
 f (generic function with 1 method)
 
 julia> @btime soptimize(f, 0.9)
-  550.548 ns (0 allocations: 0 bytes)
+  459.472 ns (0 allocations: 0 bytes)
 Results of Static Optimization Algorithm
  * Minimizer: [0.39999999998562896]
  * Minimum: [1.0216512475319814]
- * |Df(x)|: [7.983924632526396e-11]
- * Hf(x): [5.555569904413021]
+ * Hf(x): [5.5555699044130185]
  * Number of iterations: [6]
+ * Number of function calls: [11]
+ * Number of gradient calls: [7]
  * Converged: [true]
 ```
 
