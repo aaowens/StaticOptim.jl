@@ -12,15 +12,16 @@ sx = @SVector ones(2)
 sx = 3.2 * sx
 rosenbrock(x) =  (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
 res = soptimize(rosenbrock, sx)
-@test res.converged == true
+@test res.g_converged == true
 @test rosenbrock(res.minimizer) == res.minimum
+@test show(res) === nothing
 
 res = soptimize(rosenbrock, sx, StaticOptim.Order3())
-@test res.converged == true
+@test res.g_converged == true
 @test rosenbrock(res.minimizer) == res.minimum
 
 res = soptimize(rosenbrock, sx/2)
-@test res.converged == true
+@test res.g_converged == true
 @test rosenbrock(res.minimizer) == res.minimum
 
 
@@ -40,10 +41,10 @@ end
 sx = @SVector ones(3)
 sx = 3.2 * sx
 res = soptimize(fletcher_powell, sx)
-@test res.converged == true
+@test res.g_converged == true
 @test fletcher_powell(res.minimizer) == res.minimum
 res = soptimize(fletcher_powell, sx/2)
-@test res.converged == true
+@test res.g_converged == true
 @test fletcher_powell(res.minimizer) == res.minimum
 
 function himmelblau(x::AbstractVector)
@@ -52,10 +53,10 @@ end
 sx = @SVector ones(2)
 sx = 3.2 * sx
 res = soptimize(himmelblau, sx)
-@test res.converged == true
+@test res.g_converged == true
 @test himmelblau(res.minimizer) == res.minimum
 res = soptimize(himmelblau, sx/2)
-@test res.converged == true
+@test res.g_converged == true
 @test himmelblau(res.minimizer) == res.minimum
 
 function powell(x::AbstractVector)
@@ -65,10 +66,10 @@ end
 sx = @SVector ones(4)
 sx = 3.2 * sx
 res = soptimize(powell, sx)
-@test res.converged == true
+@test res.g_converged == true
 @test powell(res.minimizer) == res.minimum
 res = soptimize(powell, sx/2)
-@test res.converged == true
+@test res.g_converged == true
 @test powell(res.minimizer) == res.minimum
 
 
@@ -76,7 +77,7 @@ res = soptimize(powell, sx/2)
 
 f(x) = x^2 + 2*x
 res = soptimize(f, 1.)
-@test res.converged == true
+@test res.g_converged == true
 @test f(res.minimizer) == res.minimum
 
 function U(x)
@@ -85,7 +86,7 @@ function U(x)
 end
 f(h) = -(U(0.2 + h) + U(1 - h))
 res = soptimize(f, 0.9)
-@test res.converged == true
+@test res.g_converged == true
 @test f(res.minimizer) == res.minimum
 
 ### Root finding
