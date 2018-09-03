@@ -31,8 +31,23 @@ struct StaticOptimizationResults{Tx, Th, Tf}
     h::Th
 end
 
-function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); hguess = nothing, tol = 1e-8) where {P,T}
-    res = DiffResults.GradientResult(x)
+setresult(x::StaticVector) = DiffResults.GradientResult(x)
+setresult(x::Number) = DiffResults.DiffResult(x, x)
+initialh(x::StaticVector{P,T}) where {P,T} = SMatrix{P,P,T}(I)
+initialh(x::Number) = one(x)
+
+setgradient!(res, f, x::StaticVector) = ForwardDiff.gradient!(res, f, x)
+setgradient!(res, f, x::Number) = ForwardDiff.derivative!(res, f, x)
+function getgradient(res::DiffResults.ImmutableDiffResult{1,N,Tuple{T}}) where {N <: Number, T <: StaticVector}
+    DiffResults.gradient(res)
+end
+function getgradient(res::DiffResults.ImmutableDiffResult{1,T,Tuple{T}}) where T <: Number
+    DiffResults.derivative(res)
+end
+
+function soptimize(f, x::Union{StaticVector{P,T}, TN}, bto::BackTrackingOrder = Order2();
+    hguess = nothing, tol = 1e-8, updating = false) where {P,T, TN <: Number}
+    res = setresult(x)
     ls = BackTracking()
     order = ordernum(bto)
     xinit = copy(x)
@@ -40,7 +55,7 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); h
     if hguess !== nothing
         hx = hguess
     else
-        hx = SMatrix{P,P,T}(I)
+        hx = initialh(x)
     end
     hold = copy(hx)
     jold = copy(x); s = copy(x)
@@ -51,12 +66,22 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); h
     N = 200
     f_calls = 0
     g_calls = 0
+    if updating
+        needsupdate = true
+    end
     for n = 1:N
-        res = ForwardDiff.gradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
+        if updating
+            if needsupdate
+                res = setgradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
+                needsupdate = false
+            end
+        else
+            res = setgradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
+        end
         ϕ_0 = DiffResults.value(res)
         isfinite(ϕ_0) || return StaticOptimizationResults(xinit, NaN*x,
         NaN, n, false, tol, f_calls, g_calls, hx)
-        jx = DiffResults.gradient(res)
+        jx = getgradient(res)
         norm(jx, Inf) < tol && return StaticOptimizationResults(xinit, x,
         ϕ_0, n, true, tol, f_calls, g_calls, hx)
         if n > 1 # update hessian
@@ -76,11 +101,19 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); h
         iteration = 0
         ϕx_0, ϕx_1 = ϕ_0, ϕ_0
         α_1, α_2 = α_0, α_0
-        ϕx_1 = f(x + α_1*s); f_calls += 1;
+        if updating
+            res = setgradient!(res, f, x + α_1*s); f_calls +=1; g_calls +=1; # Obtain gradient
+            ϕx_1 = DiffResults.value(res)
+        else
+            ϕx_1 = f(x + α_1*s); f_calls +=1;
+        end
 
         # Hard-coded backtrack until we find a finite function value
         iterfinite = 0
         while !isfinite(ϕx_1) && iterfinite < iterfinitemax
+            if updating
+                needsupdate = true
+            end
             iterfinite += 1
             α_1 = α_2
             α_2 = α_1/2
@@ -89,6 +122,9 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); h
 
         # Backtrack until we satisfy sufficient decrease condition
         while ϕx_1 > ϕ_0 + c_1 * α_2 * dϕ_0
+            if updating
+                needsupdate = true
+            end
             # Increment the number of steps we've had to perform
             iteration += 1
 
@@ -139,115 +175,6 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); h
     return StaticOptimizationResults(xinit, NaN*x,
     NaN, N, false, tol, f_calls, g_calls, hx)
 end
-
-
-function soptimize(f, x::Number, hguess = nothing; tol = 1e-8)
-    f_calls = 0
-    g_calls = 0
-    res = DiffResults.DiffResult(x, (x,))
-    ls = BackTracking()
-    xinit = copy(x)
-    x_new = copy(x)
-    hx = one(x)
-    hold = copy(hx)
-    if !(hguess isa Nothing)
-        hx = hguess*one(x)
-    end
-    jold = copy(x); s = copy(x)
-    @unpack c_1, ρ_hi, ρ_lo, iterations = ls
-    iterfinitemax = -log2(eps(eltype(x)))
-    sqrttol = sqrt(eps(Float64))
-    α_0 = 1.
-    N = 200
-
-    res = ForwardDiff.derivative!(res, f, x); f_calls += 1; g_calls +=1; # Obtain gradient
-    ϕ_0 = DiffResults.value(res)
-    isfinite(ϕ_0) || return StaticOptimizationResults(xinit, NaN*x,
-    NaN, 0, false, tol, f_calls, g_calls, hx)
-    jx = DiffResults.derivative(res)
-    norm(jx, Inf) < tol && return StaticOptimizationResults(xinit, x,
-    ϕ_0, 0, true, tol, f_calls, g_calls, hx)
-    needsupdate = false
-    for n = 1:N
-        if needsupdate
-            res = ForwardDiff.derivative!(res, f, x); f_calls += 1; g_calls +=1; # Obtain gradient
-            needsupdate = false
-        end
-        ϕ_0 = DiffResults.value(res)
-        jx = DiffResults.derivative(res)
-        norm(jx, Inf) < tol && return StaticOptimizationResults(xinit, x,
-        ϕ_0, n, true, tol, f_calls, g_calls, hx)
-        if n > 1 # update hessian
-            y = jx - jold
-            hx =  y / s
-        end
-        s = -hx\jx # Obtain direction
-        dϕ_0 = dot(jx, s)
-        if dϕ_0 >= 0. # If bad, reset search direction
-            hx = hold
-            s = -jx
-            dϕ_0 = dot(jx, s)
-        end
-        #### Perform line search
-
-        # Count the total number of iterations
-        iteration = 0
-        ϕx_0, ϕx_1 = ϕ_0, ϕ_0
-        α_1, α_2 = α_0, α_0
-        res = ForwardDiff.derivative!(res, f, x + α_1*s); f_calls += 1; g_calls +=1; # Obtain gradient
-
-        ϕx_1 = DiffResults.value(res)
-
-        # Hard-coded backtrack until we find a finite function value
-        iterfinite = 0
-        while !isfinite(ϕx_1) && iterfinite < iterfinitemax
-            needsupdate = true
-            iterfinite += 1
-            α_1 = α_2
-            α_2 = α_1/2
-            ϕx_1 = f(x + α_2*s); f_calls += 1;
-        end
-
-        # Backtrack until we satisfy sufficient decrease condition
-        while ϕx_1 > ϕ_0 + c_1 * α_2 * dϕ_0
-            needsupdate = true
-            # Increment the number of steps we've had to perform
-            iteration += 1
-
-            # Ensure termination
-            if iteration > iterations
-                error("Linesearch failed to converge, reached maximum iterations $(iterations).",
-                α_2)
-            end
-
-            # Shrink proposed step-size:
-
-            # backtracking via quadratic interpolation:
-            # This interpolates the available data
-            #    f(0), f'(0), f(α)
-            # with a quadractic which is then minimised; this comes with a
-            # guaranteed backtracking factor 0.5 * (1-c_1)^{-1} which is < 1
-            # provided that c_1 < 1/2; the backtrack_condition at the beginning
-            # of the function guarantees at least a backtracking factor ρ.
-            α_tmp = - (dϕ_0 * α_2^2) / ( 2 * (ϕx_1 - ϕ_0 - dϕ_0*α_2) )
-            α_1 = α_2
-
-            α_tmp = NaNMath.min(α_tmp, α_2*ρ_hi) # avoid too small reductions
-            α_2 = NaNMath.max(α_tmp, α_2*ρ_lo) # avoid too big reductions
-
-            # Evaluate f(x) at proposed position
-            ϕx_0, ϕx_1 = ϕx_1, f(x + α_2*s); f_calls +=1;
-        end
-        alpha, fpropose = α_2, ϕx_1
-
-        s = alpha*s
-        x = x + s # Update x
-        jold = copy(jx)
-    end
-    return StaticOptimizationResults(xinit, NaN*x,
-    NaN, N, false, tol, f_calls, g_calls, hx)
-end
-
 
 function Base.show(io::IO, r::StaticOptimizationResults)
     @printf io "Results of Static Optimization Algorithm\n"
@@ -344,51 +271,51 @@ end
 ### Copied from Tamas Papp on Discourse
 
 """
-    bisection(f, a, b; fa = f(a), fb = f(b), ftol, wtol)
+bisection(f, a, b; fa = f(a), fb = f(b), ftol, wtol)
 
 Bisection algorithm for finding the root ``f(x) ≈ 0`` within the initial bracket
-`[a,b]`.
+    `[a,b]`.
 
-Returns a named tuple
+    Returns a named tuple
 
-`(x = x, fx = f(x), isroot = ::Bool, iter = ::Int, ismaxiter = ::Bool)`.
+    `(x = x, fx = f(x), isroot = ::Bool, iter = ::Int, ismaxiter = ::Bool)`.
 
-Terminates when either
+    Terminates when either
 
-1. `abs(f(x)) < ftol` (`isroot = true`),
-2. the width of the bracket is `≤wtol` (`isroot = false`),
-3. `maxiter` number of iterations is reached. (`isroot = false, maxiter = true`).
+    1. `abs(f(x)) < ftol` (`isroot = true`),
+    2. the width of the bracket is `≤wtol` (`isroot = false`),
+    3. `maxiter` number of iterations is reached. (`isroot = false, maxiter = true`).
 
-which are tested for in the above order. Therefore, care should be taken not to make `wtol` too large.
+    which are tested for in the above order. Therefore, care should be taken not to make `wtol` too large.
 
-"""
-function bisection(f, a::Real, b::Real; fa::Real = f(a), fb::Real = f(b),
-                   ftol = √eps(), wtol = 0, maxiter = 100)
-                   a, b = float(a), float(b)
-    @assert fa * fb ≤ 0 "initial values don't bracket zero"
-    @assert isfinite(a) && isfinite(b)
-    _bisection(f, float.(promote(a, b, fa, fb, ftol, wtol))..., maxiter)
-end
-
-function _bisection(f, a, b, fa, fb, ftol, wtol, maxiter)
-    iter = 0
-    abs(fa) < ftol && return (x = a, fx = fa, isroot = true, iter = iter, ismaxiter = false)
-    abs(fb) < ftol && return (x = b, fx = fb, isroot = true, iter = iter, ismaxiter = false)
-    while true
-        iter += 1
-        m = middle(a, b)
-        fm = f(m)
-        abs(fm) < ftol && return (x = m, fx = fm, isroot = true, iter = iter, ismaxiter = false)
-        abs(b-a) ≤ wtol && return (x = m, fx = fm, isroot = false, iter = iter, ismaxiter = false)
-        if fa * fm > 0
-            a, fa = m, fm
-        else
-            b, fb = m, fm
+        """
+        function bisection(f, a::Real, b::Real; fa::Real = f(a), fb::Real = f(b),
+            ftol = √eps(), wtol = 0, maxiter = 100)
+            a, b = float(a), float(b)
+            @assert fa * fb ≤ 0 "initial values don't bracket zero"
+            @assert isfinite(a) && isfinite(b)
+            _bisection(f, float.(promote(a, b, fa, fb, ftol, wtol))..., maxiter)
         end
-        iter == maxiter && return (x = m, fx = fm, isroot = false, iter = iter, ismaxiter = true)
-    end
-end
+
+        function _bisection(f, a, b, fa, fb, ftol, wtol, maxiter)
+            iter = 0
+            abs(fa) < ftol && return (x = a, fx = fa, isroot = true, iter = iter, ismaxiter = false)
+            abs(fb) < ftol && return (x = b, fx = fb, isroot = true, iter = iter, ismaxiter = false)
+            while true
+                iter += 1
+                m = middle(a, b)
+                fm = f(m)
+                abs(fm) < ftol && return (x = m, fx = fm, isroot = true, iter = iter, ismaxiter = false)
+                abs(b-a) ≤ wtol && return (x = m, fx = fm, isroot = false, iter = iter, ismaxiter = false)
+                if fa * fm > 0
+                    a, fa = m, fm
+                else
+                    b, fb = m, fm
+                end
+                iter == maxiter && return (x = m, fx = fm, isroot = false, iter = iter, ismaxiter = true)
+            end
+        end
 
 
-sroot(f, x::Number) = snewton(f, x)
-sroot(f, x::Tuple{T, T}) where T <: Number = bisection(f, x[1], x[2])
+        sroot(f, x::Number) = snewton(f, x)
+        sroot(f, x::Tuple{T, T}) where T <: Number = bisection(f, x[1], x[2])
