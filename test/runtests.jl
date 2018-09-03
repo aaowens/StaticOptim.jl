@@ -102,3 +102,25 @@ out = sroot(f, 0.5)
 out = sroot(f, (-0.5, 0.5))
 @test  out.isroot == true
 @test f(out.x) == out.fx
+
+
+const w = 3.
+const beta = 0.96
+const R = 1.01
+const alpha_h = 1.5
+uc(c) = 1/c
+uh(h) = alpha_h/(1 - h)
+function eulerfun(x)
+    a, h1, h2 = x[1], x[2], x[3]
+    c1 = w*h1 - a
+    c2 = w*h2 + R*a
+    (h1 >= 1 || h2 >= 1) && return Inf*x
+    c1 <= 0 && return Inf*x
+    out1 = uc(c1) - beta*R*uc(c2)
+    out2 = w*uc(c1) - uh(h1)
+    out3 = w*uc(c2) - uh(h2)
+    SVector(out1, out2, out3)
+end
+x = SVector(0., 0.5, 0.5)
+res = sroot(eulerfun, x)
+@test res.g_converged == true

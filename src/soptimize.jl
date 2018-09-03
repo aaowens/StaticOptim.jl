@@ -319,3 +319,15 @@ end
 
 sroot(f, x::Number) = snewton(f, x)
 sroot(f, x::Tuple{T, T}) where T <: Number = bisection(f, x[1], x[2])
+function sroot(f, x::SVector; hguess = nothing,
+    updating = false)
+    f2(s) = sum(f(s).^2)
+    soptimize(f2, x, hguess = hguess, updating = updating )
+end
+#=
+function sroot2(f, x::Number; updating = false)
+    x2 = SVector(x)
+    f2(s) = f(s[1])
+    sroot(f2, x2, updating = updating)
+end
+=#

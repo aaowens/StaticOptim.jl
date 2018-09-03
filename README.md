@@ -99,3 +99,57 @@ julia> @btime sroot(f, (-0.5, 0.5))
   223.031 ns (0 allocations: 0 bytes)
 (x = -0.040816307067871094, fx = 9.54071677217172e-9, isroot = true, iter = 20, ismaxiter = false)
 ```
+
+# Example of non-linear equation solving
+```
+julia> using StaticArrays, BenchmarkTools, StaticOptim
+
+julia> const w = 3.
+3.0
+
+julia> const beta = 0.96
+0.96
+
+julia> const R = 1.01
+1.01
+
+julia> const alpha_h = 1.5
+1.5
+
+julia> uc(c) = 1/c
+uc (generic function with 1 method)
+
+julia> uh(h) = alpha_h/(1 - h)
+uh (generic function with 1 method)
+
+julia> function eulerfun(x)
+           a, h1, h2 = x[1], x[2], x[3]
+           c1 = w*h1 - a
+           c2 = w*h2 + R*a
+           (h1 >= 1 || h2 >= 1) && return Inf*x
+           c1 <= 0 && return Inf*x
+           out1 = uc(c1) - beta*R*uc(c2)
+           out2 = w*uc(c1) - uh(h1)
+           out3 = w*uc(c2) - uh(h2)
+           SVector(out1, out2, out3)
+       end
+eulerfun (generic function with 1 method)
+
+julia> x = SVector(0., 0.5, 0.5)
+3-element SArray{Tuple{3},Float64,1,3}:
+ 0.0
+ 0.5
+ 0.5
+
+ julia> @btime sroot(eulerfun, $x)
+  3.321 μs (3 allocations: 224 bytes)
+Results of Static Optimization Algorithm
+ * Initial guess: [0.0,0.5,0.5]
+ * Minimizer: [-0.046069913165463626,0.3907860173721792,0.4093061224594615]
+ * Minimum: [4.359930872763706e-21]
+ * Hf(x): [21.530366536879317,-46.71040662443704,52.76696109347479,-46.710406624437184,213.63034559461593,-8.50337391439737,52.76696109347513,-8.503373914398187,241.31135228009185]
+ * Number of iterations: [14]
+ * Number of function calls: [39]
+ * Number of gradient calls: [14]
+ * Converged: [true]
+```
