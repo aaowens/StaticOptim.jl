@@ -19,30 +19,28 @@ struct Order0 <: BackTrackingOrder end
 ordernum(::Order2) = 2
 ordernum(::Order3) = 3
 
-struct BFGS end
-
-
-struct StaticOptimizationResults{T, Tx, Th, Tf}
+struct StaticOptimizationResults{Tx, Th, Tf}
     initial_x::Tx
     minimizer::Tx
     minimum::Tf
     iterations::Int
     g_converged::Bool
-    g_tol::T
+    g_tol::Tf
     f_calls::Int
     g_calls::Int
     h::Th
 end
 
-function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(), hguess = nothing; tol = 1e-8) where {P,T}
+function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); hguess = nothing, tol = 1e-8) where {P,T}
     res = DiffResults.GradientResult(x)
     ls = BackTracking()
     order = ordernum(bto)
     xinit = copy(x)
     x_new = copy(x)
-    hx = SMatrix{P,P,T}(I)
-    if !(hguess isa Nothing)
-        hx = hguess * hx
+    if hguess !== nothing
+        hx = hguess
+    else
+        hx = SMatrix{P,P,T}(I)
     end
     hold = copy(hx)
     jold = copy(x); s = copy(x)
@@ -63,7 +61,7 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(), h
         ϕ_0, n, true, tol, f_calls, g_calls, hx)
         if n > 1 # update hessian
             y = jx - jold
-            hx = norm(y) < eps(eltype(x)) ? hx : hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
+            hx = hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
         end
         s = -hx\jx # Obtain direction
         dϕ_0 = dot(jx, s)
@@ -253,6 +251,7 @@ end
 
 function Base.show(io::IO, r::StaticOptimizationResults)
     @printf io "Results of Static Optimization Algorithm\n"
+    @printf io " * Initial guess: [%s]\n" join(r.initial_x, ",")
     @printf io " * Minimizer: [%s]\n" join(r.minimizer, ",")
     @printf io " * Minimum: [%s]\n" join(r.minimum, ",")
     @printf io " * Hf(x): [%s]\n" join(r.h, ",")
