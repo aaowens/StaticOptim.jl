@@ -18,6 +18,7 @@ struct Order3 <: BackTrackingOrder end
 struct Order0 <: BackTrackingOrder end
 ordernum(::Order2) = 2
 ordernum(::Order3) = 3
+
 struct StaticOptimizationResults{Tx, Th, Tf}
     initial_x::Tx
     minimizer::Tx
@@ -45,8 +46,7 @@ function getgradient(res::DiffResults.ImmutableDiffResult{1,T,Tuple{T}}) where T
 end
 
 function soptimize(f, x::Union{StaticVector{P,T}, TN}, bto::BackTrackingOrder = Order2();
-    hguess = nothing, tol = 1e-8,
-    updating = false, maxiter = 200) where {P,T, TN <: Number}
+    hguess = nothing, tol = 1e-8, updating = false) where {P,T, TN <: Number}
     res = setresult(x)
     ls = BackTracking()
     order = ordernum(bto)
@@ -63,55 +63,39 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN}, bto::BackTrackingOrder = 
     iterfinitemax = -log2(eps(eltype(x)))
     sqrttol = sqrt(eps(Float64))
     α_0 = 1.
+    N = 200
     f_calls = 0
     g_calls = 0
-    ## When updating is false, the initial linesearch check computes just
-    # the value and the updating logic is skipped everywheres.
-
-    ## When updating is true, the algorithm computes both the value
-    # and the gradient in the initial linesearch check
-    # In cases where the initial guess is usually accepted, this is
-    # more efficient because we get the value for free with the gradient,
-    # so we skip a redundent function call.
-
-    # For the first iteration no gradient is available, so update
     if updating
         needsupdate = true
     end
-    for n = 1:maxiter
-        ## Compute the gradient if needed
+    for n = 1:N
         if updating
-            # If we didn't accept the first linesearch guess, the gradient
-            # is outdated, so update
             if needsupdate
                 res = setgradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
                 needsupdate = false
             end
-            # Otherwise do nothing
         else
             res = setgradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
         end
         ϕ_0 = DiffResults.value(res)
-        ## Check convergence
         isfinite(ϕ_0) || return StaticOptimizationResults(xinit, NaN*x,
         NaN, n, false, tol, f_calls, g_calls, hx)
         jx = getgradient(res)
         norm(jx, Inf) < tol && return StaticOptimizationResults(xinit, x,
         ϕ_0, n, true, tol, f_calls, g_calls, hx)
-        ## Update hessian if two gradients available
-        if n > 1
+        if n > 1 # update hessian
             y = jx - jold
             hx = hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
         end
-        ## Compute search directions
-        s = -hx\jx
+        s = -hx\jx # Obtain direction
         dϕ_0 = dot(jx, s)
         if dϕ_0 >= 0. # If bad, reset search direction
             hx = hold
             s = -jx
             dϕ_0 = dot(jx, s)
         end
-        ## Perform line search
+        #### Perform line search
 
         # Count the total number of iterations
         iteration = 0
@@ -138,8 +122,6 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN}, bto::BackTrackingOrder = 
 
         # Backtrack until we satisfy sufficient decrease condition
         while ϕx_1 > ϕ_0 + c_1 * α_2 * dϕ_0
-            # If this part is reached we did not accept the initial linesearch
-            # guess, so we will need to update on the next iterations
             if updating
                 needsupdate = true
             end
@@ -191,7 +173,7 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN}, bto::BackTrackingOrder = 
         jold = copy(jx)
     end
     return StaticOptimizationResults(xinit, NaN*x,
-    NaN, maxiter, false, tol, f_calls, g_calls, hx)
+    NaN, N, false, tol, f_calls, g_calls, hx)
 end
 
 function Base.show(io::IO, r::StaticOptimizationResults)
@@ -208,7 +190,7 @@ function Base.show(io::IO, r::StaticOptimizationResults)
 end
 
 
-### Modified Newton algorithm for root-finding
+### Modified Newton algorithm
 # I made this up, I do not know if it has nice convergence properties
 # It first computes the value and derivative and performs a Newton step
 # Then it computes the value and the potentially unnecessary derivative at the Newton point
@@ -217,18 +199,20 @@ end
 # Then it performs a Halley step using the function value at the candidate point
 # If this is an improvement, the Halley step is accepted
 # If it's still not an improvement, simple backtracking is done until it is
-function snewton(f, x::Number; maxiter = 200, tol = 1e-8)
+function snewton(f, x::Number)
     x = float(x)
     res = DiffResults.DiffResult(x, (x,))
+    tol = 1e-8
     iterfinitemax = -log2(eps(eltype(x)))
     α_0 = 1.
+    N = 200
     res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
     ϕ_0 = DiffResults.value(res)
     abs(ϕ_0) < tol && return (x = x, fx = ϕ_0)
     isfinite(ϕ_0) || return (x = NaN*x, fx = NaN)
 
     needsupdate = false
-    for n = 1:maxiter
+    for n = 1:N
         if needsupdate
             res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
             needsupdate = false
@@ -305,13 +289,12 @@ Bisection algorithm for finding the root ``f(x) ≈ 0`` within the initial brack
     which are tested for in the above order. Therefore, care should be taken not to make `wtol` too large.
 
 """
-function bisection(f, a::Real, b::Real;
-                   ftol = √eps(), wtol = 0., maxiter = 100)
+function bisection(f, a::Real, b::Real; fa::Real = f(a), fb::Real = f(b),
+    ftol = √eps(), wtol = 0, maxiter = 100)
     a, b = float(a), float(b)
-    fa, fb = f(a), f(b)
-    fa * fb ≤ 0 || error("Not a bracket")
-    (isfinite(a) && isfinite(b)) || error("Not finite")
-    _bisection(f, a, b, fa, fb, ftol, wtol, maxiter)
+    @assert fa * fb ≤ 0 "initial values don't bracket zero"
+    @assert isfinite(a) && isfinite(b)
+    _bisection(f, float.(promote(a, b, fa, fb, ftol, wtol))..., maxiter)
 end
 
 function _bisection(f, a, b, fa, fb, ftol, wtol, maxiter)
@@ -335,4 +318,16 @@ end
 
 
 sroot(f, x::Number) = snewton(f, x)
-sroot(f, x::Tuple{T, T}) where T <: Number = @inbounds bisection(f, x[1], x[2])
+sroot(f, x::Tuple{T, T}) where T <: Number = bisection(f, x[1], x[2])
+function sroot(f, x::SVector; hguess = nothing,
+    updating = false)
+    f2(s) = sum(f(s).^2)
+    soptimize(f2, x, hguess = hguess, updating = updating )
+end
+#=
+function sroot2(f, x::Number; updating = false)
+    x2 = SVector(x)
+    f2(s) = f(s[1])
+    sroot(f2, x2, updating = updating)
+end
+=#
