@@ -18,7 +18,6 @@ struct Order3 <: BackTrackingOrder end
 struct Order0 <: BackTrackingOrder end
 ordernum(::Order2) = 2
 ordernum(::Order3) = 3
-
 struct StaticOptimizationResults{Tx, Th, Tf}
     initial_x::Tx
     minimizer::Tx
@@ -31,8 +30,24 @@ struct StaticOptimizationResults{Tx, Th, Tf}
     h::Th
 end
 
-function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); hguess = nothing, tol = 1e-8) where {P,T}
-    res = DiffResults.GradientResult(x)
+setresult(x::StaticVector) = DiffResults.GradientResult(x)
+setresult(x::Number) = DiffResults.DiffResult(x, x)
+initialh(x::StaticVector{P,T}) where {P,T} = SMatrix{P,P,T}(I)
+initialh(x::Number) = one(x)
+
+setgradient!(res, f, x::StaticVector) = ForwardDiff.gradient!(res, f, x)
+setgradient!(res, f, x::Number) = ForwardDiff.derivative!(res, f, x)
+function getgradient(res::DiffResults.ImmutableDiffResult{1,N,Tuple{T}}) where {N <: Number, T <: StaticVector}
+    DiffResults.gradient(res)
+end
+function getgradient(res::DiffResults.ImmutableDiffResult{1,T,Tuple{T}}) where T <: Number
+    DiffResults.derivative(res)
+end
+
+function soptimize(f, x::Union{StaticVector{P,T}, TN}, bto::BackTrackingOrder = Order2();
+    hguess = nothing, tol = 1e-8,
+    updating = false, maxiter = 200) where {P,T, TN <: Number}
+    res = setresult(x)
     ls = BackTracking()
     order = ordernum(bto)
     xinit = copy(x)
@@ -40,7 +55,7 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); h
     if hguess !== nothing
         hx = hguess
     else
-        hx = SMatrix{P,P,T}(I)
+        hx = initialh(x)
     end
     hold = copy(hx)
     jold = copy(x); s = copy(x)
@@ -48,39 +63,73 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); h
     iterfinitemax = -log2(eps(eltype(x)))
     sqrttol = sqrt(eps(Float64))
     α_0 = 1.
-    N = 200
     f_calls = 0
     g_calls = 0
-    for n = 1:N
-        res = ForwardDiff.gradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
+    ## When updating is false, the initial linesearch check computes just
+    # the value and the updating logic is skipped everywheres.
+
+    ## When updating is true, the algorithm computes both the value
+    # and the gradient in the initial linesearch check
+    # In cases where the initial guess is usually accepted, this is
+    # more efficient because we get the value for free with the gradient,
+    # so we skip a redundent function call.
+
+    # For the first iteration no gradient is available, so update
+    if updating
+        needsupdate = true
+    end
+    for n = 1:maxiter
+        ## Compute the gradient if needed
+        if updating
+            # If we didn't accept the first linesearch guess, the gradient
+            # is outdated, so update
+            if needsupdate
+                res = setgradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
+                needsupdate = false
+            end
+            # Otherwise do nothing
+        else
+            res = setgradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
+        end
         ϕ_0 = DiffResults.value(res)
+        ## Check convergence
         isfinite(ϕ_0) || return StaticOptimizationResults(xinit, NaN*x,
         NaN, n, false, tol, f_calls, g_calls, hx)
-        jx = DiffResults.gradient(res)
+        jx = getgradient(res)
         norm(jx, Inf) < tol && return StaticOptimizationResults(xinit, x,
         ϕ_0, n, true, tol, f_calls, g_calls, hx)
-        if n > 1 # update hessian
+        ## Update hessian if two gradients available
+        if n > 1
             y = jx - jold
             hx = hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
         end
-        s = -hx\jx # Obtain direction
+        ## Compute search directions
+        s = -hx\jx
         dϕ_0 = dot(jx, s)
         if dϕ_0 >= 0. # If bad, reset search direction
             hx = hold
             s = -jx
             dϕ_0 = dot(jx, s)
         end
-        #### Perform line search
+        ## Perform line search
 
         # Count the total number of iterations
         iteration = 0
         ϕx_0, ϕx_1 = ϕ_0, ϕ_0
         α_1, α_2 = α_0, α_0
-        ϕx_1 = f(x + α_1*s); f_calls += 1;
+        if updating
+            res = setgradient!(res, f, x + α_1*s); f_calls +=1; g_calls +=1; # Obtain gradient
+            ϕx_1 = DiffResults.value(res)
+        else
+            ϕx_1 = f(x + α_1*s); f_calls +=1;
+        end
 
         # Hard-coded backtrack until we find a finite function value
         iterfinite = 0
         while !isfinite(ϕx_1) && iterfinite < iterfinitemax
+            if updating
+                needsupdate = true
+            end
             iterfinite += 1
             α_1 = α_2
             α_2 = α_1/2
@@ -89,6 +138,11 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); h
 
         # Backtrack until we satisfy sufficient decrease condition
         while ϕx_1 > ϕ_0 + c_1 * α_2 * dϕ_0
+            # If this part is reach we did not accept the initial linesearch
+            # guess, so we will need to update on the next iterations
+            if updating
+                needsupdate = true
+            end
             # Increment the number of steps we've had to perform
             iteration += 1
 
@@ -137,115 +191,7 @@ function soptimize(f, x::StaticVector{P,T}, bto::BackTrackingOrder = Order2(); h
         jold = copy(jx)
     end
     return StaticOptimizationResults(xinit, NaN*x,
-    NaN, N, false, tol, f_calls, g_calls, hx)
-end
-
-
-function soptimize(f, x::Number, hguess = nothing; tol = 1e-8)
-    f_calls = 0
-    g_calls = 0
-    res = DiffResults.DiffResult(x, (x,))
-    ls = BackTracking()
-    xinit = copy(x)
-    x_new = copy(x)
-    hx = one(x)
-    hold = copy(hx)
-    if !(hguess isa Nothing)
-        hx = hguess*one(x)
-    end
-    jold = copy(x); s = copy(x)
-    @unpack c_1, ρ_hi, ρ_lo, iterations = ls
-    iterfinitemax = -log2(eps(eltype(x)))
-    sqrttol = sqrt(eps(Float64))
-    α_0 = 1.
-    N = 200
-
-    res = ForwardDiff.derivative!(res, f, x); f_calls += 1; g_calls +=1; # Obtain gradient
-    ϕ_0 = DiffResults.value(res)
-    isfinite(ϕ_0) || return StaticOptimizationResults(xinit, NaN*x,
-    NaN, 0, false, tol, f_calls, g_calls, hx)
-    jx = DiffResults.derivative(res)
-    norm(jx, Inf) < tol && return StaticOptimizationResults(xinit, x,
-    ϕ_0, 0, true, tol, f_calls, g_calls, hx)
-    needsupdate = false
-    for n = 1:N
-        if needsupdate
-            res = ForwardDiff.derivative!(res, f, x); f_calls += 1; g_calls +=1; # Obtain gradient
-            needsupdate = false
-        end
-        ϕ_0 = DiffResults.value(res)
-        jx = DiffResults.derivative(res)
-        norm(jx, Inf) < tol && return StaticOptimizationResults(xinit, x,
-        ϕ_0, n, true, tol, f_calls, g_calls, hx)
-        if n > 1 # update hessian
-            y = jx - jold
-            hx =  y / s
-        end
-        s = -hx\jx # Obtain direction
-        dϕ_0 = dot(jx, s)
-        if dϕ_0 >= 0. # If bad, reset search direction
-            hx = hold
-            s = -jx
-            dϕ_0 = dot(jx, s)
-        end
-        #### Perform line search
-
-        # Count the total number of iterations
-        iteration = 0
-        ϕx_0, ϕx_1 = ϕ_0, ϕ_0
-        α_1, α_2 = α_0, α_0
-        res = ForwardDiff.derivative!(res, f, x + α_1*s); f_calls += 1; g_calls +=1; # Obtain gradient
-
-        ϕx_1 = DiffResults.value(res)
-
-        # Hard-coded backtrack until we find a finite function value
-        iterfinite = 0
-        while !isfinite(ϕx_1) && iterfinite < iterfinitemax
-            needsupdate = true
-            iterfinite += 1
-            α_1 = α_2
-            α_2 = α_1/2
-            ϕx_1 = f(x + α_2*s); f_calls += 1;
-        end
-
-        # Backtrack until we satisfy sufficient decrease condition
-        while ϕx_1 > ϕ_0 + c_1 * α_2 * dϕ_0
-            needsupdate = true
-            # Increment the number of steps we've had to perform
-            iteration += 1
-
-            # Ensure termination
-            if iteration > iterations
-                error("Linesearch failed to converge, reached maximum iterations $(iterations).",
-                α_2)
-            end
-
-            # Shrink proposed step-size:
-
-            # backtracking via quadratic interpolation:
-            # This interpolates the available data
-            #    f(0), f'(0), f(α)
-            # with a quadractic which is then minimised; this comes with a
-            # guaranteed backtracking factor 0.5 * (1-c_1)^{-1} which is < 1
-            # provided that c_1 < 1/2; the backtrack_condition at the beginning
-            # of the function guarantees at least a backtracking factor ρ.
-            α_tmp = - (dϕ_0 * α_2^2) / ( 2 * (ϕx_1 - ϕ_0 - dϕ_0*α_2) )
-            α_1 = α_2
-
-            α_tmp = NaNMath.min(α_tmp, α_2*ρ_hi) # avoid too small reductions
-            α_2 = NaNMath.max(α_tmp, α_2*ρ_lo) # avoid too big reductions
-
-            # Evaluate f(x) at proposed position
-            ϕx_0, ϕx_1 = ϕx_1, f(x + α_2*s); f_calls +=1;
-        end
-        alpha, fpropose = α_2, ϕx_1
-
-        s = alpha*s
-        x = x + s # Update x
-        jold = copy(jx)
-    end
-    return StaticOptimizationResults(xinit, NaN*x,
-    NaN, N, false, tol, f_calls, g_calls, hx)
+    NaN, maxiter, false, tol, f_calls, g_calls, hx)
 end
 
 
@@ -263,7 +209,7 @@ function Base.show(io::IO, r::StaticOptimizationResults)
 end
 
 
-### Modified Newton algorithm
+### Modified Newton algorithm for root-finding
 # I made this up, I do not know if it has nice convergence properties
 # It first computes the value and derivative and performs a Newton step
 # Then it computes the value and the potentially unnecessary derivative at the Newton point
@@ -272,20 +218,18 @@ end
 # Then it performs a Halley step using the function value at the candidate point
 # If this is an improvement, the Halley step is accepted
 # If it's still not an improvement, simple backtracking is done until it is
-function snewton(f, x::Number)
+function snewton(f, x::Number; maxiter = 200, tol = 1e-8)
     x = float(x)
     res = DiffResults.DiffResult(x, (x,))
-    tol = 1e-8
     iterfinitemax = -log2(eps(eltype(x)))
     α_0 = 1.
-    N = 200
     res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
     ϕ_0 = DiffResults.value(res)
     abs(ϕ_0) < tol && return (x = x, fx = ϕ_0)
     isfinite(ϕ_0) || return (x = NaN*x, fx = NaN)
 
     needsupdate = false
-    for n = 1:N
+    for n = 1:maxiter
         if needsupdate
             res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
             needsupdate = false
@@ -362,12 +306,13 @@ Terminates when either
 which are tested for in the above order. Therefore, care should be taken not to make `wtol` too large.
 
 """
-function bisection(f, a::Real, b::Real; fa::Real = f(a), fb::Real = f(b),
-                   ftol = √eps(), wtol = 0, maxiter = 100)
-                   a, b = float(a), float(b)
-    @assert fa * fb ≤ 0 "initial values don't bracket zero"
-    @assert isfinite(a) && isfinite(b)
-    _bisection(f, float.(promote(a, b, fa, fb, ftol, wtol))..., maxiter)
+function bisection(f, a::Real, b::Real;
+                   ftol = √eps(), wtol = 0., maxiter = 100)
+    a, b = float(a), float(b)
+    fa, fb = f(a), f(b)
+    fa * fb ≤ 0 || error("Not a bracket")
+    (isfinite(a) && isfinite(b)) || error("Not finite")
+    _bisection(f, a, b, fa, fb, ftol, wtol, maxiter)
 end
 
 function _bisection(f, a, b, fa, fb, ftol, wtol, maxiter)
@@ -391,4 +336,4 @@ end
 
 
 sroot(f, x::Number) = snewton(f, x)
-sroot(f, x::Tuple{T, T}) where T <: Number = bisection(f, x[1], x[2])
+sroot(f, x::Tuple{T, T}) where T <: Number = @inbounds bisection(f, x[1], x[2])
