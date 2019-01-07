@@ -138,7 +138,7 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN}, bto::BackTrackingOrder = 
 
         # Backtrack until we satisfy sufficient decrease condition
         while ϕx_1 > ϕ_0 + c_1 * α_2 * dϕ_0
-            # If this part is reach we did not accept the initial linesearch
+            # If this part is reached we did not accept the initial linesearch
             # guess, so we will need to update on the next iterations
             if updating
                 needsupdate = true
@@ -193,7 +193,6 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN}, bto::BackTrackingOrder = 
     return StaticOptimizationResults(xinit, NaN*x,
     NaN, maxiter, false, tol, f_calls, g_calls, hx)
 end
-
 
 function Base.show(io::IO, r::StaticOptimizationResults)
     @printf io "Results of Static Optimization Algorithm\n"
@@ -288,22 +287,22 @@ end
 ### Copied from Tamas Papp on Discourse
 
 """
-    bisection(f, a, b; fa = f(a), fb = f(b), ftol, wtol)
+bisection(f, a, b; fa = f(a), fb = f(b), ftol, wtol)
 
 Bisection algorithm for finding the root ``f(x) ≈ 0`` within the initial bracket
-`[a,b]`.
+    `[a,b]`.
 
-Returns a named tuple
+    Returns a named tuple
 
-`(x = x, fx = f(x), isroot = ::Bool, iter = ::Int, ismaxiter = ::Bool)`.
+    `(x = x, fx = f(x), isroot = ::Bool, iter = ::Int, ismaxiter = ::Bool)`.
 
-Terminates when either
+    Terminates when either
 
-1. `abs(f(x)) < ftol` (`isroot = true`),
-2. the width of the bracket is `≤wtol` (`isroot = false`),
-3. `maxiter` number of iterations is reached. (`isroot = false, maxiter = true`).
+    1. `abs(f(x)) < ftol` (`isroot = true`),
+    2. the width of the bracket is `≤wtol` (`isroot = false`),
+    3. `maxiter` number of iterations is reached. (`isroot = false, maxiter = true`).
 
-which are tested for in the above order. Therefore, care should be taken not to make `wtol` too large.
+    which are tested for in the above order. Therefore, care should be taken not to make `wtol` too large.
 
 """
 function bisection(f, a::Real, b::Real;
