@@ -336,3 +336,8 @@ end
 
 sroot(f, x::Number) = snewton(f, x)
 sroot(f, x::Tuple{T, T}) where T <: Number = @inbounds bisection(f, x[1], x[2])
+function sroot(f, x::SVector; hguess = nothing,
+    updating = false)
+    f2(s) = sum(f(s).^2)
+    soptimize(f2, x, hguess = hguess, updating = updating )
+end
