@@ -46,7 +46,7 @@ end
 
 function soptimize(f, x::Union{StaticVector{P,T}, TN}, bto::BackTrackingOrder = Order2();
     hguess = nothing, tol = 1e-8,
-    updating = false, maxiter = 200) where {P,T, TN <: Number}
+    updating = true, maxiter = 200) where {P,T, TN <: Number}
     res = setresult(x)
     ls = BackTracking()
     order = ordernum(bto)
@@ -337,7 +337,7 @@ end
 sroot(f, x::Number) = snewton(f, x)
 sroot(f, x::Tuple{T, T}) where T <: Number = @inbounds bisection(f, x[1], x[2])
 function sroot(f, x::SVector; hguess = nothing,
-    updating = false)
+    updating = true)
     f2(s) = sum(f(s).^2)
     soptimize(f2, x, hguess = hguess, updating = updating )
 end
