@@ -11,6 +11,8 @@ dimensional problems and cheap function calls. It also has two univariate root-f
 routines: a modified Newton method and a bisection method. All functions except bisection
 use ForwardDiff to compute derivatives. They should not allocate if the input function does not,
 thanks in part to the stack allocated gradient methods for StaticArrays in ForwardDiff.
+Currently it does allocate slightly and I am not sure why. Perhaps future compiler or package
+improvements will eliminate them.
 
 The optimization uses the BFGS method with a quadratic or cubic backtracking linesearch
 inspired by LineSearches.jl. Root-finding with an initial guess is done using a modified
