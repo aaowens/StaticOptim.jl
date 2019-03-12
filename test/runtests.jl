@@ -19,7 +19,7 @@ res = soptimize(rosenbrock, sx, hguess = res.h)
 @test res.g_converged == true
 res = soptimize(rosenbrock, sx, updating = true)
 @test res.g_converged == true
-res = soptimize(rosenbrock, sx, StaticOptim.Order3())
+res = soptimize(rosenbrock, sx, bto = StaticOptim.Order3())
 @test res.g_converged == true
 @test rosenbrock(res.minimizer) == res.minimum
 

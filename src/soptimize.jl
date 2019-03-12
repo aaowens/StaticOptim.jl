@@ -44,7 +44,7 @@ function getgradient(res::DiffResults.ImmutableDiffResult{1,T,Tuple{T}}) where T
     DiffResults.derivative(res)
 end
 
-function soptimize(f, x::Union{StaticVector{P,T}, TN}, bto::BackTrackingOrder = Order2();
+function soptimize(f, x::Union{StaticVector{P,T}, TN}; bto::BackTrackingOrder = Order2(),
     hguess = nothing, tol = 1e-8,
     updating = true, maxiter = 200) where {P,T, TN <: Number}
     res = setresult(x)
@@ -218,14 +218,13 @@ end
 # If this is an improvement, the Halley step is accepted
 # If it's still not an improvement, simple backtracking is done until it is
 function snewton(f, x::Number; maxiter = 200, tol = 1e-8)
-    x = float(x)
     res = DiffResults.DiffResult(x, (x,))
     iterfinitemax = -log2(eps(eltype(x)))
     α_0 = 1.
     res = ForwardDiff.derivative!(res, f, x) # Obtain gradient
     ϕ_0 = DiffResults.value(res)
-    abs(ϕ_0) < tol && return (x = x, fx = ϕ_0)
-    isfinite(ϕ_0) || return (x = NaN*x, fx = NaN)
+    abs(ϕ_0) < tol && return (x = x, fx = ϕ_0, isroot = true, iter = 0)
+    isfinite(ϕ_0) || return (x = NaN*x, fx = NaN, isroot = false, iter = 0)
 
     needsupdate = false
     for n = 1:maxiter
@@ -234,8 +233,8 @@ function snewton(f, x::Number; maxiter = 200, tol = 1e-8)
             needsupdate = false
         end
         ϕ_0 = DiffResults.value(res)
-        abs(ϕ_0) < tol && return (x = x, fx = ϕ_0)
-        isfinite(ϕ_0) || return (x = NaN*x, fx = NaN)
+        abs(ϕ_0) < tol && return (x = x, fx = ϕ_0, isroot = true, iter = n)
+        isfinite(ϕ_0) || return (x = NaN*x, fx = NaN, isroot = false, iter = n)
         jx = DiffResults.derivative(res)
         x2 = x - ϕ_0/jx
 
@@ -245,7 +244,7 @@ function snewton(f, x::Number; maxiter = 200, tol = 1e-8)
         α_1, α_2 = α_0, α_0
         res = ForwardDiff.derivative!(res, f, x2) # Obtain gradient
         ϕx_1 = DiffResults.value(res)
-        abs(ϕx_1) < tol && return (x = x2, fx = ϕx_1)
+        abs(ϕx_1) < tol && return (x = x2, fx = ϕx_1, isroot = true, iter = n)
 
         # Hard-coded backtrack until we find a finite function value
         iterfinite = 0
@@ -281,7 +280,7 @@ function snewton(f, x::Number; maxiter = 200, tol = 1e-8)
         end
         x = x2
     end
-    return (x = NaN*x, fx = NaN)
+    return (x = NaN*x, fx = NaN, isroot = false, iter = maxiter)
 end
 
 ### Copied from Tamas Papp on Discourse
@@ -337,7 +336,7 @@ end
 sroot(f, x::Number) = snewton(f, x)
 sroot(f, x::Tuple{T, T}) where T <: Number = @inbounds bisection(f, x[1], x[2])
 function sroot(f, x::SVector; hguess = nothing,
-    updating = true)
-    f2(s) = sum(f(s).^2)
-    soptimize(f2, x, hguess = hguess, updating = updating )
+    updating = true, tol = 1e-8, maxiter = 200)
+    f2(s) = sum(x -> x^2, f(s))
+    soptimize(f2, x, hguess = hguess, updating = updating, tol = tol, maxiter = maxiter )
 end
