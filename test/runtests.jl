@@ -1,9 +1,5 @@
 using StaticOptim
-@static if VERSION < v"0.7.0-DEV.2005"
-    using Base.Test
-else
-    using Test
-end
+using Test
 
 # All of these tests are from OptimTestProblems.jl
 
@@ -26,6 +22,56 @@ res = soptimize(rosenbrock, sx, bto = StaticOptim.Order3())
 res = soptimize(rosenbrock, sx/2)
 @test res.g_converged == true
 @test rosenbrock(res.minimizer) == res.minimum
+
+
+# Constrained
+
+function U(h, w)
+    h1, h2 = h[1], h[2]
+    h1 >= 1 && return -Inf*one(h1)
+    h2 >= 1 && return -Inf*one(h1)
+    c = 2w*h1 + 1.5w*h2 + 0.1
+    c <= 0 && return -Inf*one(h1)
+    log(c) + log(1 - h1) + log(1 - h2)
+end
+
+l = SVector{2}(0., 0.4)
+sx = SVector{2}(0.7, 0.7)
+res = constrained_soptimize(x -> -U(x, 1), sx, lower = l)
+@test res.g_converged == true
+lbs = [SVector{2}(x, y) for x in 0:0.1:0.4, y in 0:0.1:0.4]
+ubs = [SVector{2}(x, y) for x in 0.6:.1:0.9, y in 0.6:0.1:0.9]
+ws = 0.7:0.1:1.01
+sx = SVector{2}(0.5, 0.5)
+constrained_soptimize(x -> -U(x, 1.), sx, lower = SVector{2}(0., 0.1))
+sols = [(w = w, l = l, res = constrained_soptimize(x -> -U(x, w), sx, lower = l)) for l in lbs, u in ubs, w in ws]
+@test all(sol.res.g_converged == true for sol in sols)
+
+## Constrained, 4 people
+
+function U(h, w)
+    h1, h2, h3, h4 = h[1], h[2], h[3], h[4]
+    h1 >= 1 && return -Inf*one(h1)
+    h2 >= 1 && return -Inf*one(h1)
+    h3 >= 1 && return -Inf*one(h1)
+    h4 >= 1 && return -Inf*one(h1)
+    c = 2w*h1 + 1.5w*h2 + 1.2w*h3 + 0.5w*h4 + 0.1
+    c <= 0 && return -Inf*one(h1)
+    log(c) + log(1 - h1) + log(1 - h2) + log(1 - h3) + log(1 - h4)
+end
+
+l = SVector{4}(0., 0., 0., 0.)
+sx = SVector{4}(0.7, 0.7, 0.7, 0.7)
+res = constrained_soptimize(x -> -U(x, 1), sx, lower = l)
+@test res.g_converged == true
+lbs = [SVector{4}(x, y, z, t) for x in 0:0.1:0.4, y in 0:0.1:0.4, z in 0:0.1:0.4, t in 0:0.1:0.4]
+ubs = [SVector{4}(x, y, z, t) for x in 0.6:.1:0.9, y in 0.6:0.1:0.9, z in 0.6:0.1:0.9, t in 0.6:0.1:0.9]
+ws = 0.5:0.5:2.
+sx = SVector{4}(0.5, 0.5, 0.5, 0.5)
+constrained_soptimize(x -> -U(x, 1), sx, lower = SVector{4}(0.3, 0., 0.2, 0.2))
+#sols = [(w = w, l = l, res = constrained_soptimize(x -> -U(x, w), sx, lower = l, upper = u)) for l in lbs, u in ubs, w in ws];
+@test all(constrained_soptimize(x -> -U(x, w), sx, lower = l, upper = u).g_converged for l in lbs, u in ubs, w in ws)
+#sols = [(w = 1, l = l, res = constrained_soptimize(x -> -U(x, 1), sx, lower = l)) for l in lbs]
 
 
 function fletcher_powell(x::AbstractVector)
