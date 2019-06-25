@@ -246,10 +246,10 @@ Results of Static Optimization Algorithm
  * Number of function calls: [28]
  * Number of gradient calls: [16]
  * Converged: [true]
-
+```
 
  # Example of constrained optimization
-
+```
  julia> function U(h)
            h1, h2 = h[1], h[2]
            h1 >= 1 && return -Inf*one(h1)
