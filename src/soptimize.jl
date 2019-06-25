@@ -27,6 +27,7 @@ struct StaticOptimizationResults{Tx, Th, Tf}
     g_tol::Tf
     f_calls::Int
     g_calls::Int
+    g::Tx
     h::Th
 end
 
@@ -59,6 +60,7 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN}; bto::BackTrackingOrder = 
     end
     hold = copy(hx)
     jold = copy(x); s = copy(x)
+    jx = jold
     @unpack c_1, ρ_hi, ρ_lo, iterations = ls
     iterfinitemax = -log2(eps(eltype(x)))
     sqrttol = sqrt(eps(Float64))
@@ -94,10 +96,10 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN}; bto::BackTrackingOrder = 
         ϕ_0 = DiffResults.value(res)
         ## Check convergence
         isfinite(ϕ_0) || return StaticOptimizationResults(xinit, NaN*x,
-        NaN, n, false, tol, f_calls, g_calls, hx)
+        NaN, n, false, tol, f_calls, g_calls, jx, hx)
         jx = getgradient(res)
         norm(jx, Inf) < tol && return StaticOptimizationResults(xinit, x,
-        ϕ_0, n, true, tol, f_calls, g_calls, hx)
+        ϕ_0, n, true, tol, f_calls, g_calls, jx, hx)
         ## Update hessian if two gradients available
         if n > 1
             y = jx - jold
@@ -191,7 +193,7 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN}; bto::BackTrackingOrder = 
         jold = copy(jx)
     end
     return StaticOptimizationResults(xinit, NaN*x,
-    NaN, maxiter, false, tol, f_calls, g_calls, hx)
+    NaN, maxiter, false, tol, f_calls, g_calls, jx, hx)
 end
 
 function Base.show(io::IO, r::StaticOptimizationResults)
@@ -199,6 +201,7 @@ function Base.show(io::IO, r::StaticOptimizationResults)
     @printf io " * Initial guess: [%s]\n" join(r.initial_x, ",")
     @printf io " * Minimizer: [%s]\n" join(r.minimizer, ",")
     @printf io " * Minimum: [%s]\n" join(r.minimum, ",")
+    @printf io " * ∇f(x): [%s]\n" join(r.g, ",")
     @printf io " * Hf(x): [%s]\n" join(r.h, ",")
     @printf io " * Number of iterations: [%s]\n" join(r.iterations, ",")
     @printf io " * Number of function calls: [%s]\n" join(r.f_calls, ",")
@@ -339,4 +342,171 @@ function sroot(f, x::SVector; hguess = nothing,
     updating = true, tol = 1e-8, maxiter = 200)
     f2(s) = sum(x -> x^2, f(s))
     soptimize(f2, x, hguess = hguess, updating = updating, tol = tol, maxiter = maxiter )
+end
+
+
+
+#=
+Algorithm:
+Keep the actual hessian around
+Restrict it to the active variables
+Only then do the inversion (linear system)
+
+Inverting the restricted hessian will be identical to just solving a lower dimensional problem
+
+To keep dimensions constant, zero out the inactive part of the hessian, but fill the
+diagonal with 1. This will be block diagonal and the inverse of the active region
+will be the inverse of the hessian of the lower dimensional problem. The inverse
+of the inactive region will just be 1 on the diagonal.
+=#
+
+
+function constrained_soptimize(f, x::Union{StaticVector{P,T}, TN}; bto::BackTrackingOrder = Order2(),
+    hguess = nothing, tol = 1e-7, lower = -Inf*x, upper = Inf*x, maxiter = 200) where {P,T, TN <: Number}
+    res = setresult(x)
+    ls = BackTracking()
+    order = ordernum(bto)
+    xinit = copy(x)
+    x_new = copy(x)
+    hold = initialh(x)
+    hx = hold
+    jold = copy(x); s = copy(x)
+    xold = copy(x)
+    jx = jold
+    @unpack c_1, ρ_hi, ρ_lo, iterations = ls
+    iterfinitemax = -log2(eps(eltype(x)))
+    sqrttol = sqrt(eps(Float64))
+    α_0 = 1.
+    f_calls = 0
+    g_calls = 0
+    clamp.(x, lower, upper) == x || error("Initial guess not in the feasible region")
+    for n = 1:maxiter
+        ## Compute the gradient if needed
+        res = setgradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
+        ϕ_0 = DiffResults.value(res)
+
+        ## Check convergence
+        isfinite(ϕ_0) || return StaticOptimizationResults(xinit, NaN*x,
+        NaN, n, false, tol, f_calls, g_calls, jx, hx)
+        jx = getgradient(res)
+
+        # Binding set 1
+        # true if free
+        s1l = .!( ((x .<= lower + sqrttol) .& (jx .>= 0)) .| ((x .>= upper - sqrttol) .& (jx .<= 0)) )
+
+        hx = ForwardDiff.hessian(f, x)
+
+        function cdiag(x, c, i)
+            if c
+                return x
+            else
+                if i
+                    return 1.
+                else
+                    return 0.
+                end
+            end
+        end
+        isbinding(i, j) = i & j
+        # Binding set 2
+        binding = isbinding.(s1l, s1l')
+        sizex = Size(x)[1]
+        Ix = SMatrix{sizex, sizex}(I)
+        Hbar = cdiag.(hx, binding, Ix)
+
+        Sbargrad = (Hbar\jx)
+        s2l = .!( ((x .<= lower + sqrttol) .& (Sbargrad .> 0)) .| ((x .>= upper - sqrttol) .& (Sbargrad .< 0)) )
+
+        sl = s1l .& s2l
+        binding = isbinding.(sl, sl')
+        Hhat = cdiag.(hx, binding, Ix)
+
+        # set jxc to 0 if var in binding set
+        jxc = jx .* sl
+        norm(jxc, Inf) < tol && return StaticOptimizationResults(xinit, x,
+        ϕ_0, n, true, tol, f_calls, g_calls, jx, hx)
+
+        s = (-Hhat\jx) .* sl
+        dϕ_0 = dot(jx, s)
+
+        if dϕ_0 >= 0. # If bad, reset search direction
+            hx = hold
+            binding = isbinding.(s1l, s1l')
+            Shat = hx .* binding
+            s = -Shat*jx
+            dϕ_0 = dot(jx, s)
+        end
+        ## Perform line search
+
+        # Count the total number of iterations
+        iteration = 0
+        ϕx_0, ϕx_1 = ϕ_0, ϕ_0
+        α_1, α_2 = α_0, α_0
+        ϕx_1 = f(clamp.(x + α_1*s, lower, upper)); f_calls +=1;
+
+        # Hard-coded backtrack until we find a finite function value
+        iterfinite = 0
+        while !isfinite(ϕx_1) && iterfinite < iterfinitemax
+            iterfinite += 1
+            α_1 = α_2
+            α_2 = α_1/2
+            ϕx_1 = f(clamp.(x + α_2*s, lower, upper)); f_calls += 1;
+        end
+        # Backtrack until we satisfy sufficient decrease condition
+        while ϕx_1 > ϕ_0 + c_1 * α_2 * dϕ_0
+            # If this part is reached we did not accept the initial linesearch
+            # guess, so we will need to update on the next iterations
+            # Increment the number of steps we've had to perform
+            iteration += 1
+
+            # Ensure termination
+            if iteration > iterations
+                error("Linesearch failed to converge, reached maximum iterations $(iterations).",
+                α_2)
+            end
+
+            # Shrink proposed step-size:
+            if order == 2 || iteration == 1
+                # backtracking via quadratic interpolation:
+                # This interpolates the available data
+                #    f(0), f'(0), f(α)
+                # with a quadractic which is then minimised; this comes with a
+                # guaranteed backtracking factor 0.5 * (1-c_1)^{-1} which is < 1
+                # provided that c_1 < 1/2; the backtrack_condition at the beginning
+                # of the function guarantees at least a backtracking factor ρ.
+                α_tmp = - (dϕ_0 * α_2^2) / ( 2 * (ϕx_1 - ϕ_0 - dϕ_0*α_2) )
+            else
+                div = 1. / (α_1^2 * α_2^2 * (α_2 - α_1))
+                a = (α_1^2*(ϕx_1 - ϕ_0 - dϕ_0*α_2) - α_2^2*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
+                b = (-α_1^3*(ϕx_1 - ϕ_0 - dϕ_0*α_2) + α_2^3*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
+
+                #if norm(a) <= eps(Float64) + sqrttol*norm(a)
+                if isapprox(a, zero(a))
+                    α_tmp = dϕ_0 / (2*b)
+                else
+                    # discriminant
+                    d = max(b^2 - 3*a*dϕ_0, 0.)
+                    # quadratic equation root
+                    α_tmp = (-b + sqrt(d)) / (3*a)
+                end
+            end
+            α_1 = α_2
+
+            α_tmp = NaNMath.min(α_tmp, α_2*ρ_hi) # avoid too small reductions
+            α_2 = NaNMath.max(α_tmp, α_2*ρ_lo) # avoid too big reductions
+
+            # Evaluate f(x) at proposed position
+            ϕx_0, ϕx_1 = ϕx_1, f(clamp.(x + α_2*s, lower, upper)); f_calls += 1;
+        end
+        alpha, fpropose = α_2, ϕx_1
+
+        s = alpha*s
+        xnew = clamp.(x + s, lower, upper) # Update x
+        s = xnew - x
+        xold = x
+        x = xnew
+        jold = copy(jx)
+    end
+    return StaticOptimizationResults(xinit, x,
+    NaN, maxiter, false, tol, f_calls, g_calls, jx, hx)
 end
