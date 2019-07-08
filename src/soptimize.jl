@@ -30,24 +30,30 @@ struct StaticOptimizationResults{Tx, Th, Tf}
     g::Tx
     h::Th
 end
+struct StaticBFGS end
+struct StaticNewton end
 
-setresult(x::StaticVector) = DiffResults.GradientResult(x)
+setresult(x::AbstractVector) = DiffResults.GradientResult(x)
 setresult(x::Number) = DiffResults.DiffResult(x, x)
 initialh(x::StaticVector{P,T}) where {P,T} = SMatrix{P,P,T}(I)
+initialh(x::AbstractVector) = [i == j ? 1. : 0. for i in 1:size(x, 1), j in 1:size(x, 1)]
 initialh(x::Number) = one(x)
 
-setgradient!(res, f, x::StaticVector) = ForwardDiff.gradient!(res, f, x)
+setgradient!(res, f, x::AbstractVector) = ForwardDiff.gradient!(res, f, x)
 setgradient!(res, f, x::Number) = ForwardDiff.derivative!(res, f, x)
 function getgradient(res::DiffResults.ImmutableDiffResult{1,N,Tuple{T}}) where {N <: Number, T <: StaticVector}
     DiffResults.gradient(res)
+end
+function getgradient(res::DiffResults.MutableDiffResult)
+    copy(DiffResults.gradient(res))
 end
 function getgradient(res::DiffResults.ImmutableDiffResult{1,T,Tuple{T}}) where T <: Number
     DiffResults.derivative(res)
 end
 
-function soptimize(f, x::Union{StaticVector{P,T}, TN}; bto::BackTrackingOrder = Order2(),
+function soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector}; bto::BackTrackingOrder = Order2(),
     hguess = nothing, tol = 1e-8,
-    updating = true, maxiter = 200) where {P,T, TN <: Number}
+    updating = true, maxiter = 200, method = StaticBFGS()) where {P,T, TN <: Number}
     res = setresult(x)
     ls = BackTracking()
     order = ordernum(bto)
@@ -101,9 +107,14 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN}; bto::BackTrackingOrder = 
         norm(jx, Inf) < tol && return StaticOptimizationResults(xinit, x,
         ϕ_0, n, true, tol, f_calls, g_calls, jx, hx)
         ## Update hessian if two gradients available
-        if n > 1
-            y = jx - jold
-            hx = hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
+        if method isa StaticBFGS
+            if n > 1
+                y = jx - jold
+                hx = hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
+            end
+        end
+        if method isa StaticNewton
+            hx = ForwardDiff.hessian(f, x)
         end
         ## Compute search directions
         s = -hx\jx
@@ -338,7 +349,7 @@ end
 
 sroot(f, x::Number) = snewton(f, x)
 sroot(f, x::Tuple{T, T}) where T <: Number = @inbounds bisection(f, x[1], x[2])
-function sroot(f, x::SVector; hguess = nothing,
+function sroot(f, x::AbstractVector; hguess = nothing,
     updating = true, tol = 1e-8, maxiter = 200)
     f2(s) = sum(x -> x^2, f(s))
     soptimize(f2, x, hguess = hguess, updating = updating, tol = tol, maxiter = maxiter )
@@ -361,18 +372,19 @@ of the inactive region will just be 1 on the diagonal.
 =#
 
 
-function constrained_soptimize(f, x::Union{StaticVector{P,T}, TN}; bto::BackTrackingOrder = Order2(),
-    hguess = nothing, tol = 1e-7, lower = -Inf*x, upper = Inf*x, maxiter = 200) where {P,T, TN <: Number}
+function constrained_soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector}; bto::BackTrackingOrder = Order2(),
+    hguess = nothing, tol = 1e-7, lower = -Inf*x, upper = Inf*x, maxiter = 200,
+    method = StaticNewton()) where {P,T, TN <: Number}
     res = setresult(x)
     ls = BackTracking()
     order = ordernum(bto)
     xinit = copy(x)
     x_new = copy(x)
     hold = initialh(x)
-    hx = hold
+    hx = copy(hold)
     jold = copy(x); s = copy(x)
     xold = copy(x)
-    jx = jold
+    jx = copy(jold)
     @unpack c_1, ρ_hi, ρ_lo, iterations = ls
     iterfinitemax = -log2(eps(eltype(x)))
     sqrttol = sqrt(eps(Float64))
@@ -392,15 +404,24 @@ function constrained_soptimize(f, x::Union{StaticVector{P,T}, TN}; bto::BackTrac
 
         # Binding set 1
         # true if free
-        s1l = .!( ((x .<= lower + sqrttol) .& (jx .>= 0)) .| ((x .>= upper - sqrttol) .& (jx .<= 0)) )
 
-        hx = ForwardDiff.hessian(f, x)
+        ## TODO: Why does .+ sqrttol make this type unstable?
+        s1l = .!( ((x .<= lower) .& (jx .>= 0)) .| ((x .>= upper) .& (jx .<= 0)) )
+        if method isa StaticBFGS
+            if n > 1
+                y = jx - jold
+                hx = hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
+            end
+        end
+        if method isa StaticNewton
+            hx = ForwardDiff.hessian(f, x)::typeof(hold)
+        end
 
         function cdiag(x, c, i)
             if c
                 return x
             else
-                if i
+                if i == 1.
                     return 1.
                 else
                     return 0.
@@ -410,12 +431,12 @@ function constrained_soptimize(f, x::Union{StaticVector{P,T}, TN}; bto::BackTrac
         isbinding(i, j) = i & j
         # Binding set 2
         binding = isbinding.(s1l, s1l')
-        sizex = Size(x)[1]
-        Ix = SMatrix{sizex, sizex}(I)
+        #sizex = size(x)[1]
+        Ix = initialh(x) # An identity matrix of correct type
         Hbar = cdiag.(hx, binding, Ix)
 
         Sbargrad = (Hbar\jx)
-        s2l = .!( ((x .<= lower + sqrttol) .& (Sbargrad .> 0)) .| ((x .>= upper - sqrttol) .& (Sbargrad .< 0)) )
+        s2l = .!( ((x .<= lower) .& (Sbargrad .> 0)) .| ((x .>= upper) .& (Sbargrad .< 0)) )
 
         sl = s1l .& s2l
         binding = isbinding.(sl, sl')
