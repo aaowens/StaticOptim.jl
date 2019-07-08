@@ -33,15 +33,28 @@ end
 struct StaticBFGS end
 struct StaticNewton end
 
-setresult(x::AbstractVector) = DiffResults.GradientResult(x)
-setresult(x::Number) = DiffResults.DiffResult(x, x)
+setresult(x::AbstractVector) = DiffResults.HessianResult(x)
+setresult(x::Number) = DiffResults.DiffResult(x, x, x)
 initialh(x::StaticVector{P,T}) where {P,T} = SMatrix{P,P,T}(I)
 initialh(x::AbstractVector) = [i == j ? 1. : 0. for i in 1:size(x, 1), j in 1:size(x, 1)]
 initialh(x::Number) = one(x)
 
 setgradient!(res, f, x::AbstractVector) = ForwardDiff.gradient!(res, f, x)
 setgradient!(res, f, x::Number) = ForwardDiff.derivative!(res, f, x)
+sethessian!(res, f, x::AbstractVector) = ForwardDiff.hessian!(res, f, x)
+function sethessian!(res, f, x::Number)
+    dx = ForwardDiff.Dual(ForwardDiff.Dual(x, one(typeof(x))), one(typeof(x)))
+    out = f(dx)
+    val = out.value.value
+    grad = out.partials.values[1].value
+    hess = out.partials.values[1].partials[1]
+    DiffResults.DiffResult(val, grad, hess)
+end
+
 function getgradient(res::DiffResults.ImmutableDiffResult{1,N,Tuple{T}}) where {N <: Number, T <: StaticVector}
+    DiffResults.gradient(res)
+end
+function getgradient(res::DiffResults.ImmutableDiffResult)
     DiffResults.gradient(res)
 end
 function getgradient(res::DiffResults.MutableDiffResult)
@@ -51,20 +64,26 @@ function getgradient(res::DiffResults.ImmutableDiffResult{1,T,Tuple{T}}) where T
     DiffResults.derivative(res)
 end
 
-function soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector}; bto::BackTrackingOrder = Order2(),
-    hguess = nothing, tol = 1e-8,
-    updating = true, maxiter = 200, method = StaticBFGS()) where {P,T, TN <: Number}
+function getgradient(res::DiffResults.ImmutableDiffResult{1,T,Tuple{T, T}}) where T <: Number
+    DiffResults.derivative(res)
+end
+
+function gethessian(res::DiffResults.MutableDiffResult)
+    copy(DiffResults.hessian(res))
+end
+function gethessian(res::DiffResults.ImmutableDiffResult)
+    DiffResults.hessian(res)
+end
+
+function soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector}; bto::BackTrackingOrder = Order2(), tol = 1e-8,
+    updating = true, maxiter = 200) where {P,T, TN <: Number}
     res = setresult(x)
     ls = BackTracking()
     order = ordernum(bto)
     xinit = copy(x)
     x_new = copy(x)
-    if hguess !== nothing
-        hx = hguess
-    else
-        hx = initialh(x)
-    end
-    hold = copy(hx)
+    hx = gethessian(res)
+    hold = initialh(x)::typeof(hx)
     jold = copy(x); s = copy(x)
     jx = jold
     @unpack c_1, ρ_hi, ρ_lo, iterations = ls
@@ -73,32 +92,9 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector}; bto::Back
     α_0 = 1.
     f_calls = 0
     g_calls = 0
-    ## When updating is false, the initial linesearch check computes just
-    # the value and the updating logic is skipped everywheres.
-
-    ## When updating is true, the algorithm computes both the value
-    # and the gradient in the initial linesearch check
-    # In cases where the initial guess is usually accepted, this is
-    # more efficient because we get the value for free with the gradient,
-    # so we skip a redundent function call.
-
-    # For the first iteration no gradient is available, so update
-    if updating
-        needsupdate = true
-    end
     for n = 1:maxiter
-        ## Compute the gradient if needed
-        if updating
-            # If we didn't accept the first linesearch guess, the gradient
-            # is outdated, so update
-            if needsupdate
-                res = setgradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
-                needsupdate = false
-            end
-            # Otherwise do nothing
-        else
-            res = setgradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
-        end
+        ## Compute
+        res = sethessian!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
         ϕ_0 = DiffResults.value(res)
         ## Check convergence
         isfinite(ϕ_0) || return StaticOptimizationResults(xinit, NaN*x,
@@ -106,19 +102,7 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector}; bto::Back
         jx = getgradient(res)
         norm(jx, Inf) < tol && return StaticOptimizationResults(xinit, x,
         ϕ_0, n, true, tol, f_calls, g_calls, jx, hx)
-        ## Update hessian if two gradients available
-        if method isa StaticBFGS
-            if n > 1
-                y = jx - jold
-                yps = y's
-                if abs(yps) > tol
-                    hx = hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
-                end
-            end
-        end
-        if method isa StaticNewton
-            hx = ForwardDiff.hessian(f, x)
-        end
+        hx = gethessian(res)
         ## Compute search directions
         s = -hx\jx
         dϕ_0 = dot(jx, s)
@@ -133,19 +117,11 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector}; bto::Back
         iteration = 0
         ϕx_0, ϕx_1 = ϕ_0, ϕ_0
         α_1, α_2 = α_0, α_0
-        if updating
-            res = setgradient!(res, f, x + α_1*s); f_calls +=1; g_calls +=1; # Obtain gradient
-            ϕx_1 = DiffResults.value(res)
-        else
-            ϕx_1 = f(x + α_1*s); f_calls +=1;
-        end
+        ϕx_1 = f(x + α_1*s); f_calls +=1;
 
         # Hard-coded backtrack until we find a finite function value
         iterfinite = 0
         while !isfinite(ϕx_1) && iterfinite < iterfinitemax
-            if updating
-                needsupdate = true
-            end
             iterfinite += 1
             α_1 = α_2
             α_2 = α_1/2
@@ -156,9 +132,6 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector}; bto::Back
         while ϕx_1 > ϕ_0 + c_1 * α_2 * dϕ_0
             # If this part is reached we did not accept the initial linesearch
             # guess, so we will need to update on the next iterations
-            if updating
-                needsupdate = true
-            end
             # Increment the number of steps we've had to perform
             iteration += 1
 
@@ -352,10 +325,10 @@ end
 
 sroot(f, x::Number) = snewton(f, x)
 sroot(f, x::Tuple{T, T}) where T <: Number = @inbounds bisection(f, x[1], x[2])
-function sroot(f, x::AbstractVector; hguess = nothing,
+function sroot(f, x::AbstractVector;
     updating = true, tol = 1e-8, maxiter = 200)
     f2(s) = sum(x -> x^2, f(s))
-    soptimize(f2, x, hguess = hguess, updating = updating, tol = tol, maxiter = maxiter )
+    soptimize(f2, x, updating = updating, tol = tol, maxiter = maxiter )
 end
 
 
@@ -375,16 +348,16 @@ of the inactive region will just be 1 on the diagonal.
 =#
 
 
-function constrained_soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector}; bto::BackTrackingOrder = Order2(),
-    hguess = nothing, tol = 1e-7, lower = -Inf*x, upper = Inf*x, maxiter = 200,
-    method = StaticNewton()) where {P,T, TN <: Number}
+function constrained_soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector};
+    bto::BackTrackingOrder = Order2(), tol = 1e-7, lower = -Inf*x,
+    upper = Inf*x, maxiter = 200) where {P,T, TN <: Number}
     res = setresult(x)
     ls = BackTracking()
     order = ordernum(bto)
     xinit = copy(x)
     x_new = copy(x)
-    hold = initialh(x)
-    hx = copy(hold)
+    hx = gethessian(res)
+    hold = initialh(x)::typeof(hx)
     jold = copy(x); s = copy(x)
     xold = copy(x)
     jx = copy(jold)
@@ -397,7 +370,7 @@ function constrained_soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector
     clamp.(x, lower, upper) == x || error("Initial guess not in the feasible region")
     for n = 1:maxiter
         ## Compute the gradient if needed
-        res = setgradient!(res, f, x); f_calls +=1; g_calls +=1; # Obtain gradient
+        res = sethessian!(res, f, x); f_calls +=1; g_calls +=1; # Obtain hessian
         ϕ_0 = DiffResults.value(res)
 
         ## Check convergence
@@ -409,15 +382,7 @@ function constrained_soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector
         # true if free
 
         s1l = .!( ((x .<= lower) .& (jx .>= 0)) .| ((x .>= upper) .& (jx .<= 0)) )
-        if method isa StaticBFGS
-            if n > 1
-                y = jx - jold
-                hx = hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
-            end
-        end
-        if method isa StaticNewton
-            hx = ForwardDiff.hessian(f, x)::typeof(hold)
-        end
+        hx = gethessian(res)
 
         function cdiag(x, c, i)
             if c

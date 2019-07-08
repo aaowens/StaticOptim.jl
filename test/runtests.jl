@@ -11,7 +11,7 @@ res = soptimize(rosenbrock, sx)
 @test res.g_converged == true
 @test rosenbrock(res.minimizer) == res.minimum
 @test show(res) === nothing
-res = soptimize(rosenbrock, sx, hguess = res.h)
+res = soptimize(rosenbrock, sx)
 @test res.g_converged == true
 res = soptimize(rosenbrock, sx, updating = true)
 @test res.g_converged == true
@@ -170,3 +170,17 @@ end
 x = SVector(0., 0.5, 0.5)
 res = sroot(eulerfun, x)
 @test res.g_converged == true
+
+
+# Test regular arrays (OLS)
+realparam = rand(50)
+const data = rand(5000, 50)
+data[:, 1] = ones(5000)
+const y = data*realparam .+ randn(5000)
+paramg = rand(50)
+function obj(param)
+yhat = data * param
+sum((yy - yh)^2 for (yy, yh) in zip(y, yhat))
+end
+res = soptimize(obj, paramg)
+@test res.g_converged == true 
