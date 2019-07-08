@@ -110,7 +110,10 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector}; bto::Back
         if method isa StaticBFGS
             if n > 1
                 y = jx - jold
-                hx = hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
+                yps = y's
+                if abs(yps) > tol
+                    hx = hx + y*y' / (y'*s) - (hx*(s*s')*hx)/(s'*hx*s)
+                end
             end
         end
         if method isa StaticNewton
@@ -180,7 +183,7 @@ function soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector}; bto::Back
                 a = (α_1^2*(ϕx_1 - ϕ_0 - dϕ_0*α_2) - α_2^2*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
                 b = (-α_1^3*(ϕx_1 - ϕ_0 - dϕ_0*α_2) + α_2^3*(ϕx_0 - ϕ_0 - dϕ_0*α_1))*div
 
-                if norm(a) <= eps(Float64) + sqrttol*norm(a)
+                if isapprox(a, zero(a), atol = eps(Float64))
                     α_tmp = dϕ_0 / (2*b)
                 else
                     # discriminant
@@ -405,7 +408,6 @@ function constrained_soptimize(f, x::Union{StaticVector{P,T}, TN, AbstractVector
         # Binding set 1
         # true if free
 
-        ## TODO: Why does .+ sqrttol make this type unstable?
         s1l = .!( ((x .<= lower) .& (jx .>= 0)) .| ((x .>= upper) .& (jx .<= 0)) )
         if method isa StaticBFGS
             if n > 1

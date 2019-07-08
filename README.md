@@ -281,4 +281,16 @@ Results of Static Optimization Algorithm
   * Number of function calls: [5]
   * Number of gradient calls: [5]
   * Converged: [true]
+
+realparam = rand(50)
+const data = rand(5000, 50)
+data[:, 1] = ones(5000)
+const y = data*realparam .+ randn(5000)
+paramg = rand(50)
+function obj(param)
+yhat = data * param
+sum((yy - yh)^2 for (yy, yh) in zip(y, yhat))
+end
+res = soptimize(obj, paramg)
+
 ```
