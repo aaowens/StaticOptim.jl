@@ -3,3 +3,4 @@ Parameters
 ForwardDiff
 StaticArrays
 NaNMath
+Optim

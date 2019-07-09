@@ -9,12 +9,10 @@
 This package implements scalar and multivariate optimization routines optimized for low
 dimensional problems and cheap function calls. It also has two univariate root-finding
 routines: a modified Newton method and a bisection method. All functions except bisection
-use ForwardDiff to compute derivatives. They should not allocate if the input function does not,
-thanks in part to the stack allocated gradient methods for StaticArrays in ForwardDiff.
-Currently it does allocate slightly and I am not sure why. Perhaps future compiler or package
-improvements will eliminate them.
+use ForwardDiff to compute derivatives. They should not allocate much if the input function does not,
+thanks in part to the stack allocated gradient and hessian methods for StaticArrays in ForwardDiff.
 
-The optimization uses the BFGS method with a quadratic or cubic backtracking linesearch
+The optimization uses the Newton method with a quadratic or cubic backtracking linesearch
 inspired by LineSearches.jl. Root-finding with an initial guess is done using a modified
 Newton method which may not be very robust, but is fast in the problems I've tried.
 Root-finding with a bracket as a 2-tuple is done by bisection.
@@ -37,89 +35,77 @@ julia> rosenbrock(x) =  (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
 rosenbrock (generic function with 1 method)
 
 julia> @btime soptimize(rosenbrock, $sx)
-  1.950 μs (2 allocations: 176 bytes)
+  2.184 μs (27 allocations: 2.91 KiB)
 Results of Static Optimization Algorithm
  * Initial guess: [3.2,3.2]
- * Minimizer: [0.9999999999990606,0.9999999999980389]
- * Minimum: [1.5610191722141176e-24]
- * ∇f(x): [3.1072699968573e-11,-1.6475709685437323e-11]
- * Hf(x): [801.6874976844837,-399.8345645774361,-399.83456457742966,199.91241769673675]
- * Number of iterations: [31]
- * Number of function calls: [43]
- * Number of gradient calls: [35]
+ * Minimizer: [1.0000000000000009,1.0000000000000009]
+ * Minimum: [7.967495142732219e-29]
+ * ∇f(x): [3.5704772471945065e-13,-1.7763568394002505e-13]
+ * Hf(x) is size [2,2]
+ * Number of iterations: [25]
+ * Number of function calls: [56]
+ * Number of gradient calls: [25]
  * Converged: [true]
 
 
-julia> @btime soptimize(rosenbrock, $sx, bto = StaticOptim.Order3())
-  4.245 μs (2 allocations: 176 bytes)
-Results of Static Optimization Algorithm
- * Initial guess: [3.2,3.2]
- * Minimizer: [1.00000000000079,1.0000000000014033]
- * Minimum: [3.748122904800872e-24]
- * ∇f(x): [7.227907161683235e-11,-3.5349501104064984e-11]
- * Hf(x): [809.0949860892246,-403.4698587866573,-403.469858786647,201.69696183193412]
- * Number of iterations: [58]
- * Number of function calls: [101]
- * Number of gradient calls: [75]
- * Converged: [true]
+ julia> @btime soptimize(rosenbrock, $sx, bto = StaticOptim.Order3())
+   2.189 μs (27 allocations: 2.91 KiB)
+ Results of Static Optimization Algorithm
+  * Initial guess: [3.2,3.2]
+  * Minimizer: [1.0000000000000009,1.0000000000000009]
+  * Minimum: [7.967495142732219e-29]
+  * ∇f(x): [3.5704772471945065e-13,-1.7763568394002505e-13]
+  * Hf(x) is size [2,2]
+  * Number of iterations: [25]
+  * Number of function calls: [56]
+  * Number of gradient calls: [25]
+  * Converged: [true]
 
 
-julia> rosenbrock2(x) =  (1.05 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
-rosenbrock2 (generic function with 1 method)
+ julia> rosenbrock2(x) =  (1.05 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
+ rosenbrock2 (generic function with 1 method)
 
-julia> res = soptimize(rosenbrock, sx)
-Results of Static Optimization Algorithm
- * Initial guess: [3.2,3.2]
- * Minimizer: [0.9999999999990606,0.9999999999980389]
- * Minimum: [1.5610191722141176e-24]
- * ∇f(x): [3.1072699968573e-11,-1.6475709685437323e-11]
- * Hf(x): [801.6874976844837,-399.8345645774361,-399.83456457742966,199.91241769673675]
- * Number of iterations: [31]
- * Number of function calls: [43]
- * Number of gradient calls: [35]
- * Converged: [true]
-
-
-julia> @btime soptimize(rosenbrock2, $sx)
-  1.942 μs (2 allocations: 176 bytes)
-Results of Static Optimization Algorithm
- * Initial guess: [3.2,3.2]
- * Minimizer: [1.0500000000007772,1.1025000000017364]
- * Minimum: [1.6930927178305966e-24]
- * ∇f(x): [-4.22772927777584e-11,2.0872192862952943e-11]
- * Hf(x): [883.1297900203099,-419.57029197107863,-419.57029197109927,199.78781023929236]
- * Number of iterations: [31]
- * Number of function calls: [45]
- * Number of gradient calls: [36]
- * Converged: [true]
+ julia> res = soptimize(rosenbrock, sx)
+ Results of Static Optimization Algorithm
+  * Initial guess: [3.2,3.2]
+  * Minimizer: [1.0000000000000009,1.0000000000000009]
+  * Minimum: [7.967495142732219e-29]
+  * ∇f(x): [3.5704772471945065e-13,-1.7763568394002505e-13]
+  * Hf(x) is size [2,2]
+  * Number of iterations: [25]
+  * Number of function calls: [56]
+  * Number of gradient calls: [25]
+  * Converged: [true]
 
 
-julia> @btime soptimize(rosenbrock2, $res.minimizer)
-  573.508 ns (2 allocations: 176 bytes)
-Results of Static Optimization Algorithm
- * Initial guess: [0.9999999999990606,0.9999999999980389]
- * Minimizer: [1.0500000001310041,1.1025000002712262]
- * Minimum: [1.8669415025117403e-20]
- * ∇f(x): [1.8926371583108376e-9,-7.764899834228345e-10]
- * Hf(x): [883.6474886388103,-419.8559629575119,-419.85596295750753,199.94120371978056]
- * Number of iterations: [9]
- * Number of function calls: [13]
- * Number of gradient calls: [10]
- * Converged: [true]
+ julia> @btime soptimize(rosenbrock2, $sx)
+   1.929 μs (25 allocations: 2.69 KiB)
+ Results of Static Optimization Algorithm
+  * Initial guess: [3.2,3.2]
+  * Minimizer: [1.0500000000744594,1.102500000154429]
+  * Minimum: [5.918917770173918e-21]
+  * ∇f(x): [9.619482988520233e-10,-3.871569731472846e-10]
+  * Hf(x) is size [2,2]
+  * Number of iterations: [23]
+  * Number of function calls: [49]
+  * Number of gradient calls: [23]
+  * Converged: [true]
 
 
-julia> @btime soptimize(rosenbrock2, $res.minimizer, hguess = $res.h)
-  486.200 ns (4 allocations: 272 bytes)
-Results of Static Optimization Algorithm
- * Initial guess: [0.9999999999990606,0.9999999999980389]
- * Minimizer: [1.0499999999999563,1.1024999999999325]
- * Minimum: [6.04912840227379e-26]
- * ∇f(x): [-1.0252687587807972e-11,4.8405723873656825e-12]
- * Hf(x): [884.5009498563734,-420.23666626969555,-420.2366662696786,200.11181040702814]
- * Number of iterations: [9]
- * Number of function calls: [9]
- * Number of gradient calls: [9]
- * Converged: [true]
+ julia> @btime soptimize(rosenbrock2, $res.minimizer)
+   301.447 ns (5 allocations: 512 bytes)
+ Results of Static Optimization Algorithm
+  * Initial guess: [1.0000000000000009,1.0000000000000009]
+  * Minimizer: [1.0499999999999965,1.1024999999999925]
+  * Minimum: [1.7552155141167513e-29]
+  * ∇f(x): [8.615330671091183e-14,-4.440892098500626e-14]
+  * Hf(x) is size [2,2]
+  * Number of iterations: [3]
+  * Number of function calls: [5]
+  * Number of gradient calls: [3]
+  * Converged: [true]
+
+
 
 ```
 # Example of univariate derivative based optimization with numbers, not StaticArrays
@@ -136,23 +122,23 @@ julia> f(h) = -(U(0.2 + h) + U(1 - h))
 f (generic function with 1 method)
 
 julia> @btime soptimize(f, 0.5)
-  429.035 ns (1 allocation: 96 bytes)
+  350.079 ns (1 allocation: 96 bytes)
 Results of Static Optimization Algorithm
  * Initial guess: [0.5]
- * Minimizer: [0.40000000000390024]
+ * Minimizer: [0.4]
  * Minimum: [1.0216512475319812]
- * ∇f(x): [2.166822277160918e-11]
- * Hf(x): [5.555568057253705]
- * Number of iterations: [5]
+ * ∇f(x): [2.220446049250313e-16]
+ * Hf(x) is size []
+ * Number of iterations: [4]
  * Number of function calls: [7]
- * Number of gradient calls: [6]
+ * Number of gradient calls: [4]
  * Converged: [true]
 
 
 julia> using Optim
 
 julia> @btime optimize(f, 0.1, 0.9) # Maybe a better idea
-  427.920 ns (2 allocations: 176 bytes)
+  425.819 ns (2 allocations: 176 bytes)
 Results of Optimization Algorithm
  * Algorithm: Brent's Method
  * Search Interval: [0.100000, 0.900000]
@@ -162,16 +148,16 @@ Results of Optimization Algorithm
  * Convergence: max(|x - x_upper|, |x - x_lower|) <= 2*(1.5e-08*|x|+2.2e-16): true
  * Objective Function Calls: 9
 
-julia> @btime soptimize(f, 0.45, hguess = 5.5) # This converges very fast when the guess is close
-  305.733 ns (2 allocations: 112 bytes)
+julia> @btime soptimize(f, 0.45) # This converges very fast when the guess is close
+  355.538 ns (1 allocation: 96 bytes)
 Results of Static Optimization Algorithm
  * Initial guess: [0.45]
- * Minimizer: [0.399999999987932]
- * Minimum: [1.0216512475319814]
- * ∇f(x): [-6.70445921002738e-11]
- * Hf(x): [5.555567000416141]
+ * Minimizer: [0.39999999999999997]
+ * Minimum: [1.0216512475319812]
+ * ∇f(x): [-2.220446049250313e-16]
+ * Hf(x) is size []
  * Number of iterations: [4]
- * Number of function calls: [4]
+ * Number of function calls: [7]
  * Number of gradient calls: [4]
  * Converged: [true]
 ```
@@ -185,11 +171,11 @@ julia> f(a) = up(2 - a) - .96up(2 + a)
 f (generic function with 1 method)
 
 julia> @btime sroot(f, 0.5)
-  161.271 ns (0 allocations: 0 bytes)
+  179.253 ns (1 allocation: 48 bytes)
 (x = -0.04081632661278052, fx = -4.027922440030807e-11, isroot = true, iter = 3)
 
 julia> @btime sroot(f, (-0.5, 0.5))
-  223.031 ns (0 allocations: 0 bytes)
+  252.507 ns (2 allocations: 64 bytes)
 (x = -0.040816307067871094, fx = 9.54071677217172e-9, isroot = true, iter = 20, ismaxiter = false)
 ```
 
@@ -235,50 +221,52 @@ julia> x = SVector(0., 0.5, 0.5)
  0.5
 
 julia> @btime sroot(eulerfun, $x)
-  2.760 μs (6 allocations: 528 bytes)
+  2.385 μs (12 allocations: 1.45 KiB)
 Results of Static Optimization Algorithm
  * Initial guess: [0.0,0.5,0.5]
- * Minimizer: [-0.04606991316546357,0.3907860173721792,0.4093061224594615]
- * Minimum: [4.359930872763706e-21]
- * ∇f(x): [-3.2083831429648386e-10,1.2341179680644616e-9,-1.5390030429961237e-10]
- * Hf(x): [21.530366536836404,-46.710406624150394,52.766961093373936,-46.710406624150195,213.6303455936755,-8.503373913758125,52.76696109337383,-8.503373913758239,241.31135227975219]
- * Number of iterations: [14]
- * Number of function calls: [28]
- * Number of gradient calls: [16]
+ * Minimizer: [-0.046069913119393756,0.3907860173760137,0.4093061224496989]
+ * Minimum: [3.551982210586524e-23]
+ * ∇f(x): [-2.5470608653058333e-11,-6.787125184864095e-12,-1.1236500463940956e-10]
+ * Hf(x) is size [3,3]
+ * Number of iterations: [6]
+ * Number of function calls: [11]
+ * Number of gradient calls: [6]
  * Converged: [true]
 ```
 
  # Example of constrained optimization
 ```
- julia> function U(h)
-           h1, h2 = h[1], h[2]
-           h1 >= 1 && return -Inf*one(h1)
-           h2 >= 1 && return -Inf*one(h1)
-           c = 2h1 + 1.5h2 + 0.1
-           c <= 0 && return -Inf*one(h1)
-           log(c) + log(1 - h1) + log(1 - h2)
-              end
- U (generic function with 1 method)
+julia> function U(h)
+          h1, h2 = h[1], h[2]
+          h1 >= 1 && return -Inf*one(h1)
+          h2 >= 1 && return -Inf*one(h1)
+          c = 2h1 + 1.5h2 + 0.1
+          c <= 0 && return -Inf*one(h1)
+          log(c) + log(1 - h1) + log(1 - h2)
+             end
+U (generic function with 1 method)
 
- julia> l = SVector{2}(0., 0.4)
- 2-element SArray{Tuple{2},Float64,1,2}:
-  0.0
-  0.4
+julia> l = SVector{2}(0., 0.4)
+2-element SArray{Tuple{2},Float64,1,2}:
+ 0.0
+ 0.4
 
- julia> sx = SVector{2}(0.7, 0.7)
- 2-element SArray{Tuple{2},Float64,1,2}:
-  0.7
-  0.7
+julia> sx = SVector{2}(0.7, 0.7)
+2-element SArray{Tuple{2},Float64,1,2}:
+ 0.7
+ 0.7
 
- julia> res = constrained_soptimize(x -> -U(x), sx, lower = l)
- Results of Static Optimization Algorithm
-  * Initial guess: [0.7,0.7]
-  * Minimizer: [0.32500000012427305,0.4]
-  * Minimum: [0.6037636194252598]
-  * ∇f(x): [5.455058627035214e-10,0.5555555557601204]
-  * Hf(x): [4.3895747599451305,1.646090534373306,1.646090534373306,4.012345678557757]
-  * Number of iterations: [5]
-  * Number of function calls: [5]
-  * Number of gradient calls: [5]
-  * Converged: [true]
+julia> res = constrained_soptimize(x -> -U(x), sx, lower = l)
+Results of Static Optimization Algorithm
+ * Initial guess: [0.7,0.7]
+ * Minimizer: [0.32500000012427305,0.4]
+ * Minimum: [0.6037636194252598]
+ * ∇f(x): [5.455058627035214e-10,0.5555555557601204]
+ * Hf(x) is size [2,2]
+ * Number of iterations: [5]
+ * Number of function calls: [9]
+ * Number of gradient calls: [5]
+ * Converged: [true]
+
+
 ```
