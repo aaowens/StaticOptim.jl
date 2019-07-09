@@ -1,4 +1,4 @@
-using StaticOptim
+using StaticOptim, Optim
 using Test
 
 # All of these tests are from OptimTestProblems.jl
@@ -171,16 +171,30 @@ x = SVector(0., 0.5, 0.5)
 res = sroot(eulerfun, x)
 @test res.g_converged == true
 
-
-# Test regular arrays (OLS)
+# Test regular arrays (Nonlinear least squares)
+using Random
+Random.seed!(1234)
 realparam = rand(50)
 const data = rand(5000, 50)
 data[:, 1] = ones(5000)
-const y = data*realparam .+ randn(5000)
+const y = data*realparam .+ data*exp.(realparam) .+ randn(5000)
 paramg = rand(50)
 function obj(param)
-yhat = data * param
+yhat = data * param .+ data*exp.(param)
 sum((yy - yh)^2 for (yy, yh) in zip(y, yhat))
 end
-res = soptimize(obj, paramg)
-@test res.g_converged == true 
+sres = soptimize(obj, paramg);
+@test res.g_converged == true
+res = optimize(obj, paramg, method = Newton(), autodiff = :forward)
+@test all(x -> abs(x) < 1e-6, res.minimizer - sres.minimizer)
+l = rand(50)
+u = rand(50)
+u = [uu < ll ? Inf : uu for (uu, ll) in zip(u, l)]
+m = (u + l)/2
+cparamg = [isfinite(mm) ? mm : 2ll for (mm, ll) in zip(m, l)]
+df = TwiceDifferentiable(obj, cparamg, autodiff = :forward)
+dfc = TwiceDifferentiableConstraints(l, u)
+resoc = optimize(df, dfc, cparamg, IPNewton())
+sresoc = constrained_soptimize(obj, cparamg, lower = l, upper = u)
+
+@test all(x -> abs(x) < 1e-6, resoc.minimizer - sresoc.minimizer)
