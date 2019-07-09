@@ -51,9 +51,6 @@ function sethessian!(res, f, x::Number)
     DiffResults.DiffResult(val, grad, hess)
 end
 
-function getgradient(res::DiffResults.ImmutableDiffResult{1,N,Tuple{T}}) where {N <: Number, T <: StaticVector}
-    DiffResults.gradient(res)
-end
 function getgradient(res::DiffResults.ImmutableDiffResult)
     DiffResults.gradient(res)
 end
