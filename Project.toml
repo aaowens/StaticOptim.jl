@@ -1,7 +1,7 @@
 name = "StaticOptim"
 uuid = "814864de-89d5-11e8-1c72-cfea42f978d7"
 authors = ["chriselrodaaowens "]
-version = "0.0.0"
+version = "0.2.0"
 
 [deps]
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
