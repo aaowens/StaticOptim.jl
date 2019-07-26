@@ -5,5 +5,3 @@ os:
 julia:
     - 1.1
 sudo: false
-after_success:
-    - julia -e 'using Pkg; Pkg.add("Coverage"); using Coverage; Codecov.submit(process_folder())'
