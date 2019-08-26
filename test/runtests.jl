@@ -183,7 +183,6 @@ yhat = data * param .+ data*exp.(param)
 sum((yy - yh)^2 for (yy, yh) in zip(y, yhat))
 end
 sres = soptimize(obj, paramg);
-@testset "Compare vs Optim" begin
 @test res.g_converged == true
 res = optimize(obj, paramg, method = Newton(), autodiff = :forward)
 @test all(x -> abs(x) < 1e-6, res.minimizer - sres.minimizer)
@@ -198,4 +197,3 @@ resoc = optimize(df, dfc, cparamg, IPNewton())
 sresoc = constrained_soptimize(obj, cparamg, lower = l, upper = u)
 
 @test all(x -> abs(x) < 1e-6, resoc.minimizer - sresoc.minimizer)
-end
