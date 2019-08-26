@@ -170,7 +170,6 @@ end
 x = SVector(0., 0.5, 0.5)
 res = sroot(eulerfun, x)
 @test res.g_converged == true
-@testset "Compare vs Optim" begin
 # Test regular arrays (Nonlinear least squares)
 using Random
 Random.seed!(1234)
@@ -184,6 +183,7 @@ yhat = data * param .+ data*exp.(param)
 sum((yy - yh)^2 for (yy, yh) in zip(y, yhat))
 end
 sres = soptimize(obj, paramg);
+@testset "Compare vs Optim" begin
 @test res.g_converged == true
 res = optimize(obj, paramg, method = Newton(), autodiff = :forward)
 @test all(x -> abs(x) < 1e-6, res.minimizer - sres.minimizer)
