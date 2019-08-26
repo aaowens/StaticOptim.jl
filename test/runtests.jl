@@ -174,11 +174,11 @@ res = sroot(eulerfun, x)
 # Test regular arrays (Nonlinear least squares)
 using Random
 Random.seed!(1234)
-realparam = rand(50)
-const data = rand(5000, 50)
+realparam = rand(20)
+const data = rand(5000, 20)
 data[:, 1] = ones(5000)
 const y = data*realparam .+ data*exp.(realparam) .+ randn(5000)
-paramg = rand(50)
+paramg = rand(20)
 function obj(param)
 yhat = data * param .+ data*exp.(param)
 sum((yy - yh)^2 for (yy, yh) in zip(y, yhat))
@@ -187,8 +187,8 @@ sres = soptimize(obj, paramg);
 @test res.g_converged == true
 res = optimize(obj, paramg, method = Newton(), autodiff = :forward)
 @test all(x -> abs(x) < 1e-6, res.minimizer - sres.minimizer)
-l = rand(50)
-u = rand(50)
+l = rand(20)
+u = rand(20)
 u = [uu < ll ? Inf : uu for (uu, ll) in zip(u, l)]
 m = (u + l)/2
 cparamg = [isfinite(mm) ? mm : 2ll for (mm, ll) in zip(m, l)]
