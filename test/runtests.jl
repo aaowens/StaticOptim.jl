@@ -25,7 +25,7 @@ res = soptimize(rosenbrock, sx/2)
 
 
 # Constrained
-
+@testset "Contrained" begin
 function U(h, w)
     h1, h2 = h[1], h[2]
     h1 >= 1 && return -Inf*one(h1)
@@ -72,7 +72,7 @@ constrained_soptimize(x -> -U(x, 1), sx, lower = SVector{4}(0.3, 0., 0.2, 0.2))
 #sols = [(w = w, l = l, res = constrained_soptimize(x -> -U(x, w), sx, lower = l, upper = u)) for l in lbs, u in ubs, w in ws];
 @test all(constrained_soptimize(x -> -U(x, w), sx, lower = l, upper = u).g_converged for l in lbs, u in ubs, w in ws)
 #sols = [(w = 1, l = l, res = constrained_soptimize(x -> -U(x, 1), sx, lower = l)) for l in lbs]
-
+end
 
 function fletcher_powell(x::AbstractVector)
     function theta(x::AbstractVector)
@@ -170,15 +170,15 @@ end
 x = SVector(0., 0.5, 0.5)
 res = sroot(eulerfun, x)
 @test res.g_converged == true
-
+@testset "Compare vs Optim" begin
 # Test regular arrays (Nonlinear least squares)
 using Random
 Random.seed!(1234)
-realparam = rand(30)
-const data = rand(5000, 30)
+realparam = rand(50)
+const data = rand(5000, 50)
 data[:, 1] = ones(5000)
 const y = data*realparam .+ data*exp.(realparam) .+ randn(5000)
-paramg = rand(30)
+paramg = rand(50)
 function obj(param)
 yhat = data * param .+ data*exp.(param)
 sum((yy - yh)^2 for (yy, yh) in zip(y, yhat))
@@ -187,8 +187,8 @@ sres = soptimize(obj, paramg);
 @test res.g_converged == true
 res = optimize(obj, paramg, method = Newton(), autodiff = :forward)
 @test all(x -> abs(x) < 1e-6, res.minimizer - sres.minimizer)
-l = rand(30)
-u = rand(30)
+l = rand(50)
+u = rand(50)
 u = [uu < ll ? Inf : uu for (uu, ll) in zip(u, l)]
 m = (u + l)/2
 cparamg = [isfinite(mm) ? mm : 2ll for (mm, ll) in zip(m, l)]
@@ -198,3 +198,4 @@ resoc = optimize(df, dfc, cparamg, IPNewton())
 sresoc = constrained_soptimize(obj, cparamg, lower = l, upper = u)
 
 @test all(x -> abs(x) < 1e-6, resoc.minimizer - sresoc.minimizer)
+end
